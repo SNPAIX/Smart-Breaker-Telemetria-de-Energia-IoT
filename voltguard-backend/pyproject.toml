@@ -1,0 +1,16 @@
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --cov=app --cov-report=term-missing --cov-fail-under=80"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+ignore = ["B008"]  # Permite Depends() y Query() de FastAPI
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
