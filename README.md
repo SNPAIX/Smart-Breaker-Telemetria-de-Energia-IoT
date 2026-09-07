@@ -83,15 +83,15 @@ graph TD
 ```
 
 ## Stack Tecnológico
-* ** Backend Framework: FastAPI (Python 3.12)
-* ** Base de Datos & ORM: PostgreSQL + SQLAlchemy 2.x + Alembic (Migraciones)
-* ** Inferencia & ML: Scikit-learn (Proyección de consumo y costos)
-* ** Calidad de Código: Pytest ($\ge80\%$ coverage), Ruff (Linter), Mypy (Tipado estricto)
-* ** Orquestación & CI/CD: Docker, Docker Compose, GitHub Actions
+* **Backend Framework: FastAPI** (Python 3.12)
+* **Base de Datos & ORM:** PostgreSQL + SQLAlchemy 2.x + Alembic (Migraciones)
+* **Inferencia & ML:** Scikit-learn (Proyección de consumo y costos)
+* **Calidad de Código:** Pytest ($\ge80\%$ coverage), Ruff (Linter), Mypy (Tipado estricto)
+* **Orquestación & CI/CD:** Docker, Docker Compose, GitHub Actions
 
 ## Equipo de Desarrollo
-* ** Integrante 1 (Embedded & IoT Edge): Firmware en microcontrolador, integración de sensores/relé e ingesta de telemetría.
+* **Integrante 1 (Embedded & IoT Edge):** Firmware en microcontrolador, integración de sensores/relé e ingesta de telemetría.
 
-* ** Integrante 2 (Backend & Database Architecture): Modelado de entidades (SQLAlchemy), RBAC, seguridad JWT y API Admin.
+* **Integrante 2 (Backend & Database Architecture):** Modelado de entidades (SQLAlchemy), RBAC, seguridad JWT y API Admin.
 
-* ** Integrante 3 (IA, Dashboard & DevOps): Algoritmo de predicción de costo, agregaciones de dashboard, Docker y pipeline CI/CD.
+* **Integrante 3 (IA, Dashboard & DevOps):** Algoritmo de predicción de costo, agregaciones de dashboard, Docker y pipeline CI/CD.
