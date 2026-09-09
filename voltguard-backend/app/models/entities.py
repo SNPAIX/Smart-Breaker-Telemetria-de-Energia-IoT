@@ -11,7 +11,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
-    role: Mapped[str] = mapped_column(String(50), default="user")  # "admin" o "user"
+    role: Mapped[str] = mapped_column(String(50), default="user")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     devices: Mapped[list["Device"]] = relationship(back_populates="owner")
@@ -30,13 +30,13 @@ class DeviceGroup(Base):
 class Device(Base):
     __tablename__ = "devices"
 
-    id: Mapped[str] = mapped_column(String(50), primary_key=True)  # ej: "DEV-ESP32-01"
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
     owner_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
     group_id: Mapped[Optional[int]] = mapped_column(ForeignKey("device_groups.id"))
-    max_current_threshold: Mapped[float] = mapped_column(Float, default=15.0)  # Amperios
+    max_current_threshold: Mapped[float] = mapped_column(Float, default=15.0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    relay_status: Mapped[bool] = mapped_column(Boolean, default=True)  # True = ON, False = OFF
+    relay_status: Mapped[bool] = mapped_column(Boolean, default=True)
 
     owner: Mapped[Optional[User]] = relationship(back_populates="devices")
     group: Mapped[Optional[DeviceGroup]] = relationship(back_populates="devices")
@@ -51,6 +51,9 @@ class Reading(Base):
     voltage: Mapped[float] = mapped_column(Float)
     current: Mapped[float] = mapped_column(Float)
     power: Mapped[float] = mapped_column(Float)
+    frequency: Mapped[float] = mapped_column(Float, default=60.0)
+    power_factor: Mapped[float] = mapped_column(Float, default=1.0)
+    energy: Mapped[float] = mapped_column(Float, default=0.0)
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
