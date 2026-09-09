@@ -1,7 +1,7 @@
-# 0001. Arquitectura en Capas y Control de Acceso (RBAC) para VoltGuard
+# 0001: Arquitectura en Capas y Control de Acceso (RBAC) para VoltGuard
 
 * **Estatus:** Aceptado
-* **Fecha:** 2026-09-06
+* **Fecha:** 29 de Agosto del 2026
 
 ## Contexto
 El sistema VoltGuard requiere gestionar telemetría de energía en tiempo real, corte proactivo de corriente (Smart Breaker) y visibilidad de consumo tanto para el usuario residencial como para administradores de grupos/edificios.
