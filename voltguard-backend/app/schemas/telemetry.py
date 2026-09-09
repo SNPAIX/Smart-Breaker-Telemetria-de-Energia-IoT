@@ -1,11 +1,11 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 from typing import Optional
 
 
 # --- Ingesta desde el ESP32-C3 ---
 class TelemetryReadingCreate(BaseModel):
-    device_id: str = Field(..., example="DEV-ESP32-C3-01")
+    device_id: str = Field(..., json_schema_extra={"example": "DEV-ESP32-C3-01"})
     voltage: float = Field(..., ge=0.0, le=300.0, description="Voltaje en VCA")
     current: float = Field(..., ge=0.0, le=100.0, description="Corriente RMS en A")
     power: float = Field(..., ge=0.0, description="Potencia activa en W")
@@ -26,5 +26,4 @@ class ReadingOut(TelemetryReadingCreate):
     id: int
     recorded_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

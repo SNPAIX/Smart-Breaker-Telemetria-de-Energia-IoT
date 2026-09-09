@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import operative
+from app.routers import operative, auth  # Agregamos auth aquí
 
 app = FastAPI(
     title="VoltGuard IoT API",
@@ -8,7 +8,8 @@ app = FastAPI(
 )
 
 # Registrar Routers
-app.include_router(operative.router)
+app.include_router(auth.router)        # Nuevo router de Autenticación
+app.include_router(operative.router)   # Router Operativo que ya tenías
 
 
 @app.get("/health")
