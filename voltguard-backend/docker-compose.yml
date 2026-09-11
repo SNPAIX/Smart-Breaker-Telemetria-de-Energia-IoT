@@ -23,6 +23,7 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://voltguard_user:supersecretpassword@db:5432/voltguard_db
+      - SECRET_KEY=${SECRET_KEY:-dev-only-insecure-key-set-SECRET_KEY-env-var}
     depends_on:
       db:
         condition: service_healthy
