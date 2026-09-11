@@ -26,6 +26,26 @@ def test_rule_based_needs_minimum_history():
     assert result.is_anomaly is False
 
 
+def test_rule_based_zero_variance_flags_any_change():
+    # Historial perfectamente constante (std=0): el z-score no se puede
+    # calcular (división por cero), así que cualquier cambio se marca
+    # como anómalo directamente, en vez de comparar contra un umbral.
+    detector = RuleBasedDetector(min_history=5)
+    history = [100.0, 100.0, 100.0, 100.0, 100.0]
+    result = detector.evaluate(history, 100.0)
+    assert result.is_anomaly is False
+
+    result = detector.evaluate(history, 105.0)
+    assert result.is_anomaly is True
+
+
+def test_isolation_forest_needs_minimum_history():
+    detector = IsolationForestDetector(min_history=10)
+    result = detector.evaluate([60.0, 61.0, 59.0], 400.0)
+    assert result.is_anomaly is False
+    assert result.detector_name == "isolation_forest"
+
+
 def test_isolation_forest_flags_large_spike():
     detector = IsolationForestDetector(min_history=10)
     rng = __import__("random")
