@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+defaults:
+  run:
+    working-directory: voltguard-backend
+
 jobs:
   test-and-lint:
     runs-on: ubuntu-latest
@@ -27,6 +31,9 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://voltguard_user:supersecretpassword@localhost:5432/voltguard_db
+      # Clave solo para CI/tests. En producción se lee de un secret real
+      # (ver Settings > Secrets > Actions), nunca se hardcodea en el repo.
+      SECRET_KEY: ${{ secrets.SECRET_KEY || 'ci-only-test-key-not-used-in-production' }}
 
     steps:
       - name: Checkout del código
@@ -37,6 +44,7 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
+          cache-dependency-path: voltguard-backend/requirements.txt
 
       - name: Instalar dependencias
         run: |
