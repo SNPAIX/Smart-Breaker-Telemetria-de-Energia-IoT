@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
-from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # --- Ingesta desde el ESP32-C3 ---
@@ -18,7 +18,7 @@ class TelemetryReadingCreate(BaseModel):
 class TelemetryResponse(BaseModel):
     status: str
     relay_status: bool  # True = Mantener energizado, False = Cortar (GPIO6 LOW)
-    alert: Optional[str] = None
+    alert: str | None = None
 
 
 # --- Lectura para Consultas HTTP / Dashboard ---

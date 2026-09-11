@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+
+from app.core.dependencies import get_current_admin
 from app.db import get_db
 from app.models.entities import Device, User
 from app.schemas.device import DeviceCreate, DeviceOut
-from app.core.dependencies import get_current_admin
 
 router = APIRouter(
     prefix="/api/v1/admin", 
@@ -12,7 +13,7 @@ router = APIRouter(
 )
 
 @router.post("/devices", response_model=DeviceOut, status_code=status.HTTP_201_CREATED)
-def register_device(device_in: DeviceCreate, db: Session = Depends(get_db)):
+def register_device(device_in: DeviceCreate, db: Session = Depends(get_db)) -> Device:
     """Da de alta un nuevo dispositivo (ESP32) en el sistema."""
     existing_device = db.query(Device).filter(Device.id == device_in.id).first()
     if existing_device:
@@ -32,7 +33,7 @@ def register_device(device_in: DeviceCreate, db: Session = Depends(get_db)):
     return new_device
 
 @router.get("/dashboard/metrics")
-def get_global_metrics(db: Session = Depends(get_db)):
+def get_global_metrics(db: Session = Depends(get_db)) -> dict[str, object]:
     """Retorna las métricas globales para el dashboard del administrador."""
     total_devices = db.query(Device).count()
     active_devices = db.query(Device).filter(Device.relay_status == True).count()

@@ -1,14 +1,38 @@
 from fastapi.testclient import TestClient
-from app.main import app
+
 from app.core.security import create_access_token, get_password_hash
 from app.db import SessionLocal
+from app.main import app
 from app.models.entities import User
 
 client = TestClient(app)
 
+
+def _ensure_admin_user() -> int:
+    """El middleware de auth busca el usuario por id en la BD (no solo en
+    el token), así que el usuario admin debe existir antes de usarlo."""
+    db = SessionLocal()
+    existing = db.query(User).filter(User.email == "admin_test@voltguard.com").first()
+    if not existing:
+        admin_user = User(
+            email="admin_test@voltguard.com",
+            hashed_password=get_password_hash("password123"),
+            role="admin",
+        )
+        db.add(admin_user)
+        db.commit()
+        db.refresh(admin_user)
+        user_id = admin_user.id
+    else:
+        user_id = existing.id
+    db.close()
+    return user_id
+
+
 def test_admin_dashboard_access():
-    # 1. Generar token con rol de administrador
-    admin_token = create_access_token(subject="1", role="admin")
+    # 1. Generar token con rol de administrador (el usuario debe existir)
+    admin_id = _ensure_admin_user()
+    admin_token = create_access_token(subject=str(admin_id), role="admin")
     headers = {"Authorization": f"Bearer {admin_token}"}
     
     # 2. Intentar acceder al dashboard
@@ -25,13 +49,13 @@ def test_normal_user_rejected():
     existing = db.query(User).filter(User.email == "normal_test@voltguard.com").first()
     if not existing:
         normal_user = User(
-            id=99,
             email="normal_test@voltguard.com",
             hashed_password=get_password_hash("password123"),
             role="user"
         )
         db.add(normal_user)
         db.commit()
+        db.refresh(normal_user)
         user_id = normal_user.id
     else:
         user_id = existing.id
@@ -53,8 +77,9 @@ def test_normal_user_rejected():
     assert response.json()["detail"] == "Privilegios insuficientes. Se requiere rol de administrador."
 
 def test_create_device_success():
-    # 1. Generar token de administrador
-    admin_token = create_access_token(subject="1", role="admin")
+    # 1. Generar token de administrador (el usuario debe existir)
+    admin_id = _ensure_admin_user()
+    admin_token = create_access_token(subject=str(admin_id), role="admin")
     headers = {"Authorization": f"Bearer {admin_token}"}
     
     # 2. Datos del dispositivo a registrar
