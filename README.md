@@ -94,6 +94,13 @@ graph TD
     class DB db;
     class CostModel ia;
 ```
+##  Arquitectura del hardware a implementar
+* **Microcontrolador y Sensor Principal:** El sistema utiliza un ESP32-C3 como núcleo de procesamiento y conectividad Wi-Fi, integrándose mediante comunicación UART optoaislada con el módulo PZEM-004T V3.0 (100 A) para la medición de voltaje, corriente RMS, potencia activa, frecuencia, factor de potencia y energía acumulada.  
+* **Aislamiento y Regulación de Energía:** La electrónica se alimenta directamente de la red mediante una fuente AC/DC aislada Mean Well IRM-05-5 (~127 VCA a 5 VDC), complementada con un regulador AMS1117-3.3 y capacitores de desacoplamiento (10 µF y 100 nF) para estabilizar los cambios rápidos de corriente durante la transmisión Wi-Fi.  
+* **Adaptación de Niveles Lógicos:** Dado que el ESP32 trabaja a 3.3 V y el PZEM a 5 V, se implementó un buffer lógico 74HCT125 para la transmisión (TX a RX) y un divisor resistivo (10 kΩ / 20 kΩ) para la recepción segura (RX del ESP32)
+* **Seguridad y Potencia:** El corte de carga se realiza mediante un relé SLA-05VDC-SL-A configurado en modo Normalmente Abierto (NO) como medida de seguridad por fallo de energía, controlado a través de un driver ULN2003A.  
+El sistema cuenta con doble protección por fusibles (retardados T15A para la carga de potencia y T1A para la fuente electrónica), un varistor MOV para picos de voltaje, y una línea de tierra física (PE) completamente aislada de la lógica del software.  
+* **Diseño de PCB:** La placa de circuito impreso está dividida estrictamente en dos regiones físicas aisladas: una zona de alta tensión (CA, fusibles, MOV, relé y entradas de red) y una zona de baja tensión (ESP32, reguladores, drivers y señales UART). 
 
 ---
 
