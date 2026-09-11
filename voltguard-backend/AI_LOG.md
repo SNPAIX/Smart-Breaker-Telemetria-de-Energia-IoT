@@ -43,3 +43,22 @@
 
 1. **Validación sobre Generación:** El código generado para modelos ORM debe ser auditado manualmente para asegurar que cumpla con las reglas de negocio y los estándares estStrictos de tipado (`mypy`).
 2. **Control de Contexto:** Proporcionar la versión exacta de las librerías (ej. Pydantic V2, SQLAlchemy 2.x) en el prompt evita sugerencias con sintaxis obsoleta o deprecada.
+
+### Entrada #004 — Port de las piezas de inteligencia, seguridad y CI real sobre `rama2July`
+* **Prompt / Consulta a la IA:**
+  *"Portar a `rama2July` las 3 piezas de inteligencia (motor de corte, detector de anomalías, proyección de costo), agregar logging estructurado en JSON, RBAC en los endpoints nuevos, sacar `SECRET_KEY` del código a variable de entorno, y revisar por qué el pipeline de CI nunca había corrido."*
+* **Sugerencia Generada por la IA:**
+  Identificó que el workflow de GitHub Actions estaba en una carpeta que no correspondía a la raíz esperada por CI, por lo que nunca se había disparado. Para la advertencia de `SECRET_KEY` insegura, propuso inicialmente usar `importlib.reload()` en las pruebas para forzar la reevaluación del módulo al cambiar la variable de entorno.
+* **Criterio de Aceptación / Rechazo:**
+  * **Aceptado:** Reubicación del workflow de CI a la carpeta correcta (quedó corriendo por primera vez de forma real). Port de las 3 piezas de inteligencia, logging en JSON y RBAC en los endpoints nuevos.
+  * **Rechazado:** El uso de `importlib.reload()` para probar la advertencia de clave insegura, por ser frágil (otros módulos como `dependencies.py` importan `SECRET_KEY` por valor al arrancar el proceso, y recargar `security.py` a media suite podía desincronizar esa copia).
+  * **Modificado/Aceptado:** Se extrajo la lógica de la advertencia a una función independiente (`_warn_if_insecure_key`), probada directamente con el fixture `caplog` de pytest sin recargar módulos. Resultado: 50 pruebas, 100% de cobertura, determinista en cualquier número de corridas.
+---
+ 
+##  Experimento de Uso de IA y Lecciones Aprendidas
+ 
+1. **Validación sobre Generación:** El código generado para modelos ORM debe ser auditado manualmente para asegurar que cumpla con las reglas de negocio y los estándares estrictos de tipado (`mypy`).
+2. **Control de Contexto:** Proporcionar la versión exacta de las librerías (ej. Pydantic V2, SQLAlchemy 2.x) en el prompt evita sugerencias con sintaxis obsoleta o deprecada.
+3. **Preferir pruebas deterministas sobre atajos de conveniencia:** Ante un efecto secundario a nivel de módulo (como una advertencia de log al importar), aislarlo en una función propia es más robusto para pruebas que recurrir a recargar módulos, lo que puede introducir estado inconsistente entre pruebas.
+4. **La configuración de CI también se audita:** Un pipeline de CI "verde" no garantiza que se esté ejecutando; verificar que el workflow viva en la ruta correcta del repositorio fue clave para detectar que nunca se había disparado.
+ 
