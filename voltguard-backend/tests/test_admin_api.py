@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from app.core.security import create_access_token, get_password_hash
 from app.db import SessionLocal
 from app.main import app
-from app.models.entities import User
+from app.models.entities import Device, User
 
 client = TestClient(app)
 
@@ -81,20 +81,42 @@ def test_create_device_success():
     admin_id = _ensure_admin_user()
     admin_token = create_access_token(subject=str(admin_id), role="admin")
     headers = {"Authorization": f"Bearer {admin_token}"}
-    
-    # 2. Datos del dispositivo a registrar
+
+    # 2. Garantizar estado limpio: sin esto, en una segunda corrida el
+    # dispositivo ya existiría y nunca se ejercería el camino de éxito.
+    db = SessionLocal()
+    db.query(Device).filter(Device.id == "DEV-ESP32-ADMIN-01").delete()
+    db.commit()
+    db.close()
+
+    # 3. Datos del dispositivo a registrar
     payload = {
         "id": "DEV-ESP32-ADMIN-01",
         "name": "Bomba de Agua Taller",
         "max_current_threshold": 12.5
     }
-    
-    # 3. Enviar petición POST
+
+    # 4. Enviar petición POST
     response = client.post("/api/v1/admin/devices", headers=headers, json=payload)
-    
-    # Aceptamos 201 (creado) o 400 (si ya fue creado en una ejecución previa)
-    assert response.status_code in [201, 400]
-    if response.status_code == 201:
-        data = response.json()
-        assert data["id"] == "DEV-ESP32-ADMIN-01"
-        assert data["max_current_threshold"] == 12.5
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["id"] == "DEV-ESP32-ADMIN-01"
+    assert data["max_current_threshold"] == 12.5
+
+
+def test_create_duplicate_device_returns_400():
+    admin_id = _ensure_admin_user()
+    admin_token = create_access_token(subject=str(admin_id), role="admin")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    payload = {
+        "id": "DEV-ESP32-ADMIN-DUP-01",
+        "name": "Dispositivo duplicado de prueba",
+        "max_current_threshold": 10.0
+    }
+    client.post("/api/v1/admin/devices", headers=headers, json=payload)  # primera vez
+
+    response = client.post("/api/v1/admin/devices", headers=headers, json=payload)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "El ID del dispositivo ya existe."
