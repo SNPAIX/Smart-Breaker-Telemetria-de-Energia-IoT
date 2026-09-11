@@ -18,11 +18,21 @@ SECRET_KEY = os.getenv("SECRET_KEY", _DEV_FALLBACK_KEY)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 días
 
-if SECRET_KEY == _DEV_FALLBACK_KEY:
-    logger.warning(
-        "insecure_secret_key_in_use",
-        extra={"hint": "Define la variable de entorno SECRET_KEY antes de desplegar."},
-    )
+
+def _warn_if_insecure_key(key: str) -> None:
+    """Aislado en su propia función (en vez de un `if` suelto a nivel de
+    módulo) para poder probarlo directamente sin recargar el módulo
+    completo — recargar app.core.security en un test sería frágil, ya que
+    otros módulos (dependencies.py) importan SECRET_KEY por valor al
+    arrancar el proceso, no por referencia."""
+    if key == _DEV_FALLBACK_KEY:
+        logger.warning(
+            "insecure_secret_key_in_use",
+            extra={"hint": "Define la variable de entorno SECRET_KEY antes de desplegar."},
+        )
+
+
+_warn_if_insecure_key(SECRET_KEY)
 
 def get_password_hash(password: str) -> str:
     salt = bcrypt.gensalt()
