@@ -23,6 +23,7 @@ def test_growing_consumption_flags_trending_up():
     daily = [500.0, 500.0, 500.0, 500.0, 900.0, 900.0, 900.0, 900.0]
     result = project_monthly_cost(daily)
     assert result.is_trending_up is True
+    assert result.percent_change_vs_previous_period is not None
     assert result.percent_change_vs_previous_period > 0.30
 
 
@@ -55,3 +56,12 @@ def test_factors_include_expected_keys():
         "trend_wh_per_day",
         "percent_change_vs_previous_period",
     }
+
+
+def test_single_day_history_has_zero_trend():
+    # Con un solo día de datos no hay pendiente que calcular: la regresión
+    # lineal debe devolver la tendencia en 0, no fallar.
+    result = project_monthly_cost([750.0])
+    assert result.days_analyzed == 1
+    assert result.trend_wh_per_day == 0.0
+    assert result.avg_daily_energy_wh == 750.0

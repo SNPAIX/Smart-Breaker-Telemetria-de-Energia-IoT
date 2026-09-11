@@ -5,13 +5,13 @@ from fastapi.testclient import TestClient
 from app.core.security import create_access_token, get_password_hash
 from app.db import SessionLocal
 from app.main import app
-from app.models.entities import Device, Reading, User
+from app.models.entities import Alert, Device, Reading, User
 
 client = TestClient(app)
 
 
 def _admin_headers() -> dict[str, str]:
-    """Los endpoints de /api/v1/devices/* requieren rol admin (RBAC)."""
+    """Los endpoints de /api/v1/dispositivos/* requieren rol admin (RBAC)."""
     db = SessionLocal()
     existing = db.query(User).filter(User.email == "admin_intel_test@voltguard.com").first()
     if existing is None:
@@ -54,7 +54,7 @@ def _ensure_device(device_id: str, max_current_threshold: float = 15.0) -> None:
     db.close()
 
 
-def _base_payload(device_id: str, current: float, power: float = 300.0) -> dict:
+def _base_payload(device_id: str, current: float, power: float = 300.0) -> dict[str, float | str]:
     return {
         "device_id": device_id,
         "voltage": 127.0,
@@ -81,7 +81,7 @@ def test_overload_reading_trips_relay_and_logs_safety_event():
     assert data["relay_status"] is False
 
     events = client.get(
-        f"/api/v1/devices/{device_id}/safety-events", headers=_admin_headers()
+        f"/api/v1/dispositivos/{device_id}/eventos-seguridad", headers=_admin_headers()
     )
     assert events.status_code == 200
     events_data = events.json()
@@ -92,8 +92,27 @@ def test_overload_reading_trips_relay_and_logs_safety_event():
 
 def test_safety_events_require_admin_auth():
     device_id = "DEV-TEST-CUTOFF-01"
-    response = client.get(f"/api/v1/devices/{device_id}/safety-events")
+    response = client.get(f"/api/v1/dispositivos/{device_id}/eventos-seguridad")
     assert response.status_code == 401
+
+
+def test_list_all_safety_events_and_alerts():
+    """Cubre las variantes 'globales' (sin filtrar por dispositivo) de
+    ambos listados, usadas por un dashboard que ve todos los eventos."""
+    device_id = "DEV-TEST-CUTOFF-ALL-01"
+    _ensure_device(device_id, max_current_threshold=15.0)
+
+    client.post(
+        "/api/v1/telemetry/readings",
+        json=_base_payload(device_id, current=20.0),
+    )
+
+    events = client.get("/api/v1/dispositivos/eventos-seguridad/todos", headers=_admin_headers())
+    assert events.status_code == 200
+    assert any(e["device_id"] == device_id for e in events.json())
+
+    alerts = client.get("/api/v1/dispositivos/alertas/todas", headers=_admin_headers())
+    assert alerts.status_code == 200
 
 
 def test_normal_reading_does_not_trip_relay():
@@ -115,7 +134,7 @@ def test_safety_threshold_can_be_reconfigured():
     _ensure_device(device_id, max_current_threshold=15.0)
 
     response = client.patch(
-        f"/api/v1/devices/{device_id}/safety-threshold",
+        f"/api/v1/dispositivos/{device_id}/umbral-seguridad",
         json={"max_current_threshold": 10.0, "auto_cutoff_enabled": True},
         headers=_admin_headers(),
     )
@@ -134,6 +153,17 @@ def test_anomalous_reading_creates_alert():
     device_id = "DEV-TEST-ANOMALY-01"
     _ensure_device(device_id, max_current_threshold=15.0)
 
+    # La base de pruebas es persistente entre corridas: si no limpiamos las
+    # lecturas viejas de este dispositivo, el detector calcula el
+    # promedio/desviación sobre un historial contaminado de ejecuciones
+    # anteriores, y el pico de 900W puede dejar de verse "anómalo" frente
+    # a ese ruido acumulado.
+    db = SessionLocal()
+    db.query(Alert).filter(Alert.device_id == device_id).delete()
+    db.query(Reading).filter(Reading.device_id == device_id).delete()
+    db.commit()
+    db.close()
+
     # Historial estable de ~60W
     for _ in range(6):
         client.post(
@@ -147,7 +177,7 @@ def test_anomalous_reading_creates_alert():
         json=_base_payload(device_id, current=1.0, power=900.0),
     )
 
-    alerts = client.get(f"/api/v1/devices/{device_id}/alerts", headers=_admin_headers())
+    alerts = client.get(f"/api/v1/dispositivos/{device_id}/alertas", headers=_admin_headers())
     assert alerts.status_code == 200
     assert any(a["detector"] == "rule_based" for a in alerts.json())
 
@@ -157,7 +187,7 @@ def test_cost_projection_for_device_with_no_readings():
     _ensure_device(device_id)
 
     response = client.get(
-        f"/api/v1/devices/{device_id}/cost-projection", headers=_admin_headers()
+        f"/api/v1/dispositivos/{device_id}/proyeccion-costo", headers=_admin_headers()
     )
     assert response.status_code == 200
     data = response.json()
@@ -167,7 +197,7 @@ def test_cost_projection_for_device_with_no_readings():
 
 def test_cost_projection_unknown_device_returns_404():
     response = client.get(
-        "/api/v1/devices/DEV-DOES-NOT-EXIST/cost-projection", headers=_admin_headers()
+        "/api/v1/dispositivos/DEV-DOES-NOT-EXIST/proyeccion-costo", headers=_admin_headers()
     )
     assert response.status_code == 404
 
@@ -196,7 +226,7 @@ def test_cost_projection_computes_trend_from_daily_energy_deltas():
     db.close()
 
     response = client.get(
-        f"/api/v1/devices/{device_id}/cost-projection?days=10", headers=_admin_headers()
+        f"/api/v1/dispositivos/{device_id}/proyeccion-costo?days=10", headers=_admin_headers()
     )
     assert response.status_code == 200
     data = response.json()
