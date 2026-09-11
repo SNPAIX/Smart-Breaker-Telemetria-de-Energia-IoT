@@ -1,7 +1,8 @@
-from datetime import datetime, timedelta, timezone
-from typing import Any, Union
-from jose import jwt
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
 import bcrypt
+from jose import jwt
 
 # Configuración estática para desarrollo
 SECRET_KEY = "super-secret-key-voltguard-iot-change-me"
@@ -19,8 +20,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     except ValueError:
         return False
 
-def create_access_token(subject: Union[str, Any], role: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+def create_access_token(subject: str | Any, role: str) -> str:
+    expire = datetime.now(UTC) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode = {"exp": expire, "sub": str(subject), "role": role}
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt: str = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt

@@ -10,6 +10,24 @@ jobs:
   test-and-lint:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: voltguard_user
+          POSTGRES_PASSWORD: supersecretpassword
+          POSTGRES_DB: voltguard_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U voltguard_user -d voltguard_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://voltguard_user:supersecretpassword@localhost:5432/voltguard_db
+
     steps:
       - name: Checkout del código
         uses: actions/checkout@v4
@@ -17,7 +35,7 @@ jobs:
       - name: Configurar Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-python-version: '3.12'
+          python-version: '3.12'
           cache: 'pip'
 
       - name: Instalar dependencias
@@ -30,6 +48,9 @@ jobs:
 
       - name: Verificación de Tipos (Mypy)
         run: mypy app/
+
+      - name: Aplicar migraciones
+        run: alembic upgrade head
 
       - name: Pruebas Automatizadas y Cobertura (Pytest)
         run: pytest

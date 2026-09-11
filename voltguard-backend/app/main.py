@@ -1,5 +1,6 @@
 from fastapi import FastAPI
-from app.routers import operative, auth, admin  # <--- Asegúrate de incluir 'admin' aquí
+
+from app.routers import admin, auth, operative  # <--- Asegúrate de incluir 'admin' aquí
 
 app = FastAPI(
     title="VoltGuard IoT API",
@@ -10,6 +11,7 @@ app = FastAPI(
 # Registrar Routers
 app.include_router(auth.router)
 app.include_router(operative.router)
+app.include_router(operative.devices_router)
 app.include_router(admin.router)  # <--- Aquí es donde se usa
 
 

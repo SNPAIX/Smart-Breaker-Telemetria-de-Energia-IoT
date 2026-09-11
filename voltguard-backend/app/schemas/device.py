@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DeviceCreate(BaseModel):
@@ -13,8 +13,9 @@ class DeviceToggle(BaseModel):
 
 
 class DeviceOut(DeviceCreate):
-    owner_id: Optional[int] = None
-    group_id: Optional[int] = None
+    owner_id: int | None = None
+    group_id: int | None = None
+    auto_cutoff_enabled: bool = True
     is_active: bool
     relay_status: bool
 

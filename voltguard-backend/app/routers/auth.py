@@ -1,16 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+
+from app.core.security import create_access_token, get_password_hash, verify_password
 from app.db import get_db
 from app.models.entities import User
-from app.schemas.auth import UserCreate, UserOut, Token
-from app.core.security import get_password_hash, verify_password, create_access_token
+from app.schemas.auth import Token, UserCreate, UserOut
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
 
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
+def register_user(user_in: UserCreate, db: Session = Depends(get_db)) -> User:
     # Verificar si el email ya existe
     existing_user = db.query(User).filter(User.email == user_in.email).first()
     if existing_user:
@@ -35,9 +36,9 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=Token)
 def login_for_access_token(
-    form_data: OAuth2PasswordRequestForm = Depends(), 
-    db: Session = Depends(get_db)
-):
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
     # Buscar usuario por email (form_data.username se usa para el email en OAuth2)
     user = db.query(User).filter(User.email == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
