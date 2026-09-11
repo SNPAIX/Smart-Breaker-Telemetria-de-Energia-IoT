@@ -2,11 +2,34 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
+from app.core.security import create_access_token, get_password_hash
 from app.db import SessionLocal
 from app.main import app
-from app.models.entities import Device, Reading
+from app.models.entities import Device, Reading, User
 
 client = TestClient(app)
+
+
+def _admin_headers() -> dict[str, str]:
+    """Los endpoints de /api/v1/devices/* requieren rol admin (RBAC)."""
+    db = SessionLocal()
+    existing = db.query(User).filter(User.email == "admin_intel_test@voltguard.com").first()
+    if existing is None:
+        admin_user = User(
+            email="admin_intel_test@voltguard.com",
+            hashed_password=get_password_hash("password123"),
+            role="admin",
+        )
+        db.add(admin_user)
+        db.commit()
+        db.refresh(admin_user)
+        admin_id = admin_user.id
+    else:
+        admin_id = existing.id
+    db.close()
+
+    token = create_access_token(subject=str(admin_id), role="admin")
+    return {"Authorization": f"Bearer {token}"}
 
 
 def _ensure_device(device_id: str, max_current_threshold: float = 15.0) -> None:
@@ -47,6 +70,7 @@ def test_overload_reading_trips_relay_and_logs_safety_event():
     device_id = "DEV-TEST-CUTOFF-01"
     _ensure_device(device_id, max_current_threshold=15.0)
 
+    # La ingesta de telemetría es del ESP32 (sin JWT de usuario), no lleva headers
     response = client.post(
         "/api/v1/telemetry/readings",
         json=_base_payload(device_id, current=20.0),
@@ -56,12 +80,20 @@ def test_overload_reading_trips_relay_and_logs_safety_event():
     assert data["status"] == "critical_overload"
     assert data["relay_status"] is False
 
-    events = client.get(f"/api/v1/devices/{device_id}/safety-events")
+    events = client.get(
+        f"/api/v1/devices/{device_id}/safety-events", headers=_admin_headers()
+    )
     assert events.status_code == 200
     events_data = events.json()
     assert len(events_data) >= 1
     assert events_data[0]["event_type"] == "CRITICAL_OVERLOAD"
     assert events_data[0]["current"] == 20.0
+
+
+def test_safety_events_require_admin_auth():
+    device_id = "DEV-TEST-CUTOFF-01"
+    response = client.get(f"/api/v1/devices/{device_id}/safety-events")
+    assert response.status_code == 401
 
 
 def test_normal_reading_does_not_trip_relay():
@@ -85,6 +117,7 @@ def test_safety_threshold_can_be_reconfigured():
     response = client.patch(
         f"/api/v1/devices/{device_id}/safety-threshold",
         json={"max_current_threshold": 10.0, "auto_cutoff_enabled": True},
+        headers=_admin_headers(),
     )
     assert response.status_code == 200
     assert response.json()["max_current_threshold"] == 10.0
@@ -114,7 +147,7 @@ def test_anomalous_reading_creates_alert():
         json=_base_payload(device_id, current=1.0, power=900.0),
     )
 
-    alerts = client.get(f"/api/v1/devices/{device_id}/alerts")
+    alerts = client.get(f"/api/v1/devices/{device_id}/alerts", headers=_admin_headers())
     assert alerts.status_code == 200
     assert any(a["detector"] == "rule_based" for a in alerts.json())
 
@@ -123,7 +156,9 @@ def test_cost_projection_for_device_with_no_readings():
     device_id = "DEV-TEST-COST-EMPTY-01"
     _ensure_device(device_id)
 
-    response = client.get(f"/api/v1/devices/{device_id}/cost-projection")
+    response = client.get(
+        f"/api/v1/devices/{device_id}/cost-projection", headers=_admin_headers()
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["days_analyzed"] == 0
@@ -131,7 +166,9 @@ def test_cost_projection_for_device_with_no_readings():
 
 
 def test_cost_projection_unknown_device_returns_404():
-    response = client.get("/api/v1/devices/DEV-DOES-NOT-EXIST/cost-projection")
+    response = client.get(
+        "/api/v1/devices/DEV-DOES-NOT-EXIST/cost-projection", headers=_admin_headers()
+    )
     assert response.status_code == 404
 
 
@@ -158,7 +195,9 @@ def test_cost_projection_computes_trend_from_daily_energy_deltas():
     db.commit()
     db.close()
 
-    response = client.get(f"/api/v1/devices/{device_id}/cost-projection?days=10")
+    response = client.get(
+        f"/api/v1/devices/{device_id}/cost-projection?days=10", headers=_admin_headers()
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["days_analyzed"] == 3

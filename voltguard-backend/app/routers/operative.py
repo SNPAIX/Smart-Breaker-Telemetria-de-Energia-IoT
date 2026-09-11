@@ -6,6 +6,7 @@ from itertools import pairwise
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import get_current_admin
 from app.core.logging_config import get_logger
 from app.db import get_db
 from app.models.entities import Alert, Device, Reading, SafetyEvent
@@ -26,7 +27,11 @@ from app.services.cost_projection import (
 from app.services.cutoff_rules import evaluate_cutoff
 
 router = APIRouter(prefix="/api/v1/telemetry", tags=["Operative IoT"])
-devices_router = APIRouter(prefix="/api/v1/devices", tags=["Devices - Safety & Intelligence"])
+devices_router = APIRouter(
+    prefix="/api/v1/devices",
+    tags=["Devices - Safety & Intelligence"],
+    dependencies=[Depends(get_current_admin)],  # Protege TODAS las rutas de este router
+)
 
 # Estrategia activa de detección: "rule_based" (sin IA, default) o
 # "isolation_forest" (con IA). Configurable por variable de entorno para
