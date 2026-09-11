@@ -14,3 +14,7 @@ ignore = ["B008"]  # Permite Depends() y Query() de FastAPI
 python_version = "3.12"
 strict = true
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
