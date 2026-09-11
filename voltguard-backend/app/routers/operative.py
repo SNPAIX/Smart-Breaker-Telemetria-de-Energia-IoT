@@ -28,7 +28,7 @@ from app.services.cutoff_rules import evaluate_cutoff
 
 router = APIRouter(prefix="/api/v1/telemetry", tags=["Operative IoT"])
 devices_router = APIRouter(
-    prefix="/api/v1/devices",
+    prefix="/api/v1/dispositivos",
     tags=["Devices - Safety & Intelligence"],
     dependencies=[Depends(get_current_admin)],  # Protege TODAS las rutas de este router
 )
@@ -146,7 +146,7 @@ def receive_telemetry(
 
 # --- Motor de reglas de corte: configuración y auditoría ---
 @devices_router.patch(
-    "/{device_id}/safety-threshold",
+    "/{device_id}/umbral-seguridad",
     response_model=DeviceOut,
     summary="Configurar el umbral de corte automático (RF-4)",
 )
@@ -162,7 +162,7 @@ def update_safety_threshold(
 
 
 @devices_router.get(
-    "/safety-events/all",
+    "/eventos-seguridad/todos",
     response_model=list[SafetyEventOut],
     summary="Listar todos los eventos de corte automático (CRITICAL_OVERLOAD)",
 )
@@ -171,7 +171,7 @@ def list_all_safety_events(db: Session = Depends(get_db)) -> list[SafetyEvent]:
 
 
 @devices_router.get(
-    "/{device_id}/safety-events",
+    "/{device_id}/eventos-seguridad",
     response_model=list[SafetyEventOut],
     summary="Listar eventos de corte automático de un dispositivo",
 )
@@ -187,7 +187,7 @@ def list_device_safety_events(device_id: str, db: Session = Depends(get_db)) -> 
 
 # --- Detector de anomalías: consulta de alertas generadas ---
 @devices_router.get(
-    "/alerts/all",
+    "/alertas/todas",
     response_model=list[AlertOut],
     summary="Listar todas las alertas de anomalías",
 )
@@ -196,7 +196,7 @@ def list_all_alerts(db: Session = Depends(get_db)) -> list[Alert]:
 
 
 @devices_router.get(
-    "/{device_id}/alerts",
+    "/{device_id}/alertas",
     response_model=list[AlertOut],
     summary="Listar alertas de anomalías de un dispositivo",
 )
@@ -212,7 +212,7 @@ def list_device_alerts(device_id: str, db: Session = Depends(get_db)) -> list[Al
 
 # --- Proyección de costo mensual (inferencia de IA de apoyo) ---
 @devices_router.get(
-    "/{device_id}/cost-projection",
+    "/{device_id}/proyeccion-costo",
     response_model=CostProjectionOut,
     summary="Proyección de consumo y costo mensual",
 )
