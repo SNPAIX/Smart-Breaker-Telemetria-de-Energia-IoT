@@ -6,6 +6,7 @@ from itertools import pairwise
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.logging_config import get_logger
 from app.db import get_db
 from app.models.entities import Alert, Device, Reading, SafetyEvent
 from app.schemas.device import DeviceOut
@@ -31,6 +32,8 @@ devices_router = APIRouter(prefix="/api/v1/devices", tags=["Devices - Safety & I
 # "isolation_forest" (con IA). Configurable por variable de entorno para
 # poder demostrar ambas versiones sin tocar código ni reiniciar servicios.
 DETECTOR_STRATEGY = os.getenv("ANOMALY_DETECTOR", "rule_based")
+
+logger = get_logger("voltguard.operative")
 
 
 def _get_device_or_404(db: Session, device_id: str) -> Device:
@@ -73,6 +76,16 @@ def receive_telemetry(
             f"SOBRECARGA DETECTADA: {payload.current}A excede el límite de "
             f"{device.max_current_threshold}A"
         )
+        logger.warning(
+            "safety_cutoff_triggered",
+            extra={
+                "device_id": device.id,
+                "event_type": "CRITICAL_OVERLOAD",
+                "current": cutoff.current_a,
+                "max_current_threshold": cutoff.max_current_a,
+                "action_taken": "SHUTDOWN_ORDER_ISSUED",
+            },
+        )
 
     # 2. Detector de anomalías (estadístico, relativo al historial del
     # propio dispositivo) — informativo, nunca corta la energía.
@@ -106,6 +119,15 @@ def receive_telemetry(
                 expected_power=result.expected_power_w,
                 detector=result.detector_name,
             )
+        )
+        logger.info(
+            "anomaly_detected",
+            extra={
+                "device_id": device.id,
+                "power": payload.power,
+                "expected_power": result.expected_power_w,
+                "detector": result.detector_name,
+            },
         )
 
     db.commit()
