@@ -15,13 +15,13 @@ def _ensure_admin_user() -> int:
     existing = db.query(User).filter(User.email == "admin_test@voltguard.com").first()
     if not existing:
         admin_user = User(
-            id=1,
             email="admin_test@voltguard.com",
             hashed_password=get_password_hash("password123"),
             role="admin",
         )
         db.add(admin_user)
         db.commit()
+        db.refresh(admin_user)
         user_id = admin_user.id
     else:
         user_id = existing.id
@@ -49,13 +49,13 @@ def test_normal_user_rejected():
     existing = db.query(User).filter(User.email == "normal_test@voltguard.com").first()
     if not existing:
         normal_user = User(
-            id=99,
             email="normal_test@voltguard.com",
             hashed_password=get_password_hash("password123"),
             role="user"
         )
         db.add(normal_user)
         db.commit()
+        db.refresh(normal_user)
         user_id = normal_user.id
     else:
         user_id = existing.id
