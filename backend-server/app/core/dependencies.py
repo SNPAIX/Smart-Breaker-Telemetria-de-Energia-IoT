@@ -63,6 +63,37 @@ def get_current_site_member(
     return membership
 
 
+def get_authorized_device(
+    device_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Device:
+    """Confirma que el dispositivo `device_id` existe, está vinculado a un
+    sitio, y que el usuario autenticado tiene membresía en ese sitio.
+
+    Responde 404 tanto si el dispositivo no existe como si no está
+    autorizado — a propósito, para no revelarle a un usuario sin acceso
+    si un `device_id` ajeno existe o no."""
+    not_found = HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Dispositivo no encontrado.",
+    )
+
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if device is None or device.site_id is None:
+        raise not_found
+
+    membership = (
+        db.query(SiteMember)
+        .filter(SiteMember.site_id == device.site_id, SiteMember.user_id == current_user.id)
+        .first()
+    )
+    if membership is None:
+        raise not_found
+
+    return device
+
+
 def get_current_device(
     authorization: str = Header(..., description='Esquema: "Device <public_id>:<secret>"'),
     db: Session = Depends(get_db),

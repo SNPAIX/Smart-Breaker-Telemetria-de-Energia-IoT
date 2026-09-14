@@ -32,9 +32,11 @@ class User(Base):
     site_memberships: Mapped[list["SiteMember"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
-    notifications: Mapped[list["Notification"]] = relationship(back_populates="user")
+    notifications: Mapped[list["Notification"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
     notification_preferences: Mapped[list["NotificationPreference"]] = relationship(
-        back_populates="user"
+        back_populates="user", cascade="all, delete-orphan"
     )
 
 
