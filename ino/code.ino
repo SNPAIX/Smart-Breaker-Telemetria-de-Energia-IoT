@@ -2,6 +2,13 @@
 #include <MycilaPZEM.h>
 
 // ============================================================
+// ETAPA 12 — CAPA DE RED (agregada; no reemplaza nada de lo de arriba)
+// ============================================================
+#include "device_storage.h"
+#include "iot_client.h"
+#include "provisioning.h"
+
+// ============================================================
 // CONFIGURACIÓN
 // ============================================================
 
@@ -122,6 +129,13 @@ void setup()
                 Serial.println(" Wh");
 
                 Serial.println("-------------------------");
+
+                // Etapa 12: corte critico local + reporte al backend.
+                // Se engancha aqui, no reemplaza nada de lo de arriba.
+                onPzemReading(
+                    data.voltage, data.current, data.activePower,
+                    data.frequency, data.powerFactor, data.activeEnergy
+                );
             }
             else if (event == Mycila::PZEM::EventType::EVT_READ_ERROR)
             {
@@ -147,6 +161,13 @@ void setup()
     setRelay(false);
 
     lastRelayChange = millis();
+
+    // ============================================================
+    // ETAPA 12 — inicialización de la capa de red (agregada)
+    // ============================================================
+    deviceStorageBegin();
+    provisioningBegin();
+    iotClientBegin();
 }
 
 
@@ -156,14 +177,13 @@ void setup()
 
 void loop()
 {
-    // Cambiar el estado del relevador cada 10 segundos
-    if (millis() - lastRelayChange >= RELAY_INTERVAL)
-    {
-        lastRelayChange = millis();
+    // Etapa 12: reemplaza el bloque de demostracion (alternar el rele cada
+    // 10s) por la orquestacion real de aprovisionamiento/red. La lectura
+    // del PZEM y el corte critico local NO dependen de este loop — ya
+    // corrieron de forma sincrona dentro del callback (ver arriba).
+    provisioningLoop();
+    iotClientLoop();
 
-        setRelay(!relayState);
-    }
-
-    // Evitar bloquear completamente el loop
+    // Evitar bloquear completamente el loop (tambien alimenta el watchdog)
     delay(10);
 }
