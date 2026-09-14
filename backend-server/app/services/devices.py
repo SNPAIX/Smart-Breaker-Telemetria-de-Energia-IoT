@@ -11,7 +11,16 @@ from itertools import pairwise
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.models.entities import Command, Device, Event, TelemetryReading, User
+from app.config import settings
+from app.models.entities import (
+    Command,
+    Device,
+    DeviceProfile,
+    Event,
+    TelemetryReading,
+    User,
+)
+from app.services.device_auth import issue_device_credential
 
 
 def list_recent_telemetry(
@@ -26,14 +35,19 @@ def list_recent_telemetry(
     )
 
 
+def list_events(
+    db: Session, *, device_id: int | None = None, event_type: str | None = None, limit: int = 100
+) -> list[Event]:
+    query = db.query(Event)
+    if device_id is not None:
+        query = query.filter(Event.device_id == device_id)
+    if event_type is not None:
+        query = query.filter(Event.type == event_type)
+    return query.order_by(Event.created_at.desc()).limit(limit).all()
+
+
 def list_device_events(db: Session, device_id: int, limit: int = 100) -> list[Event]:
-    return (
-        db.query(Event)
-        .filter(Event.device_id == device_id)
-        .order_by(Event.created_at.desc())
-        .limit(limit)
-        .all()
-    )
+    return list_events(db, device_id=device_id, limit=limit)
 
 
 def compute_daily_consumption_wh(
@@ -126,3 +140,87 @@ def claim_device(db: Session, device: Device, site_id: int) -> Device:
     db.commit()
     db.refresh(device)
     return device
+
+
+def is_device_online(device: Device) -> bool:
+    if device.last_seen_at is None:
+        return False
+    age = datetime.now(UTC) - device.last_seen_at
+    return age < timedelta(seconds=settings.device_online_threshold_seconds)
+
+
+def create_device(
+    db: Session,
+    *,
+    public_id: str,
+    name: str,
+    site_id: int | None = None,
+    profile_id: int | None = None,
+) -> tuple[Device, str]:
+    """Alta administrativa de un dispositivo. Devuelve (device, secreto en
+    texto plano) — el secreto solo existe fuera del hash en este momento,
+    quien lo recibe debe guardarlo."""
+    existing = db.query(Device).filter(Device.public_id == public_id).first()
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ya existe un dispositivo con ese public_id.",
+        )
+
+    device = Device(public_id=public_id, name=name, site_id=site_id, profile_id=profile_id)
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+
+    plain_secret = issue_device_credential(device)
+    db.commit()
+    db.refresh(device)
+    return device, plain_secret
+
+
+def list_all_devices(db: Session, *, site_id: int | None = None) -> list[Device]:
+    query = db.query(Device)
+    if site_id is not None:
+        query = query.filter(Device.site_id == site_id)
+    return query.order_by(Device.id.asc()).all()
+
+
+def get_device_or_404(db: Session, device_id: int) -> Device:
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Dispositivo no encontrado."
+        )
+    return device
+
+
+def update_device(
+    db: Session, device: Device, *, name: str | None = None, profile_id: int | None = None
+) -> Device:
+    if name is not None:
+        device.name = name
+    if profile_id is not None:
+        exists = db.query(DeviceProfile).filter(DeviceProfile.id == profile_id).first()
+        if exists is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Perfil no encontrado."
+            )
+        device.profile_id = profile_id
+    db.commit()
+    db.refresh(device)
+    return device
+
+
+def admin_reassign_device(db: Session, device: Device, site_id: int | None) -> Device:
+    """A diferencia de `claim_device` (solo para dispositivos sin sitio),
+    el admin puede mover un dispositivo entre sitios libremente, o
+    desvincularlo (`site_id=None`)."""
+    device.site_id = site_id
+    db.commit()
+    db.refresh(device)
+    return device
+
+
+def delete_device(db: Session, device: Device) -> None:
+    db.delete(device)  # cascada: credential, telemetry_readings, commands, events, anomaly_alerts
+    db.commit()

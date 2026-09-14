@@ -22,5 +22,10 @@ class Settings(BaseSettings):
     # "rule_based" (sin IA, default) o "isolation_forest" (con IA).
     anomaly_detector: str = "rule_based"
 
+    # Un dispositivo se considera "online" si su last_seen_at es más
+    # reciente que este umbral — no es un campo booleano que haya que
+    # mantener sincronizado, se calcula al consultar (ver etapa 7).
+    device_online_threshold_seconds: int = 300
+
 
 settings = Settings()
