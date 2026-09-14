@@ -50,10 +50,10 @@ def list_device_events(db: Session, device_id: int, limit: int = 100) -> list[Ev
     return list_events(db, device_id=device_id, limit=limit)
 
 
-def compute_daily_consumption_wh(
+def compute_daily_consumption(
     db: Session, device_id: int, days: int = 14
-) -> tuple[int, list[float]]:
-    """Devuelve (lecturas_analizadas, consumo_diario_en_Wh).
+) -> tuple[int, list[tuple[str, float]]]:
+    """Devuelve (lecturas_analizadas, [(fecha_iso, consumo_Wh), ...]).
 
     `energy` es la lectura acumulada del medidor en kWh (nunca se resetea
     sola), no el consumo del día — el consumo real es la diferencia entre
@@ -61,6 +61,10 @@ def compute_daily_consumption_wh(
     rango se descarta por no tener línea base previa. Misma lógica que
     usaba `app/api/admin/devices_intelligence.py` en el repo base (ver
     ADR 0009) — se reutiliza tal cual, solo cambia de dónde se llama.
+
+    Se conserva la fecha de cada bucket (no solo el valor en Wh) porque la
+    etapa 8 necesita saber qué tarifa estaba vigente cada día para
+    prorratear el costo cuando el precio cambió a mitad del período.
     """
     now = datetime.now(UTC)
     start = now - timedelta(days=days)
@@ -75,11 +79,24 @@ def compute_daily_consumption_wh(
     for reading in readings:
         buckets[reading.recorded_at.strftime("%Y-%m-%d")].append(reading)
 
-    daily_energy_kwh = [max(r.energy for r in buckets[day]) for day in sorted(buckets)]
+    sorted_days = sorted(buckets)
+    daily_energy_kwh = [max(r.energy for r in buckets[day]) for day in sorted_days]
     daily_wh = [
         max(0.0, (current - previous) * 1000.0) for previous, current in pairwise(daily_energy_kwh)
     ]
-    return len(readings), daily_wh
+    # El primer día se descarta (sin línea base previa), así que las fechas
+    # se alinean a partir del segundo día de `sorted_days`.
+    dated_daily_wh = list(zip(sorted_days[1:], daily_wh, strict=True))
+    return len(readings), dated_daily_wh
+
+
+def compute_daily_consumption_wh(
+    db: Session, device_id: int, days: int = 14
+) -> tuple[int, list[float]]:
+    """Igual que `compute_daily_consumption`, pero sin las fechas — lo que
+    necesita la etapa 9 (tendencia) para no acoplarse a Tariff."""
+    count, dated = compute_daily_consumption(db, device_id, days=days)
+    return count, [wh for _, wh in dated]
 
 
 def switch_device(db: Session, device: Device, desired_state: str) -> Command:

@@ -87,6 +87,22 @@ class ProfileOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TariffCreateIn(BaseModel):
+    price_per_kwh: float = Field(..., gt=0.0)
+    currency: str = "MXN"
+
+
+class TariffOut(BaseModel):
+    id: int
+    site_id: int
+    currency: str
+    price_per_kwh: float
+    valid_from: datetime
+    valid_to: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AdminEventOut(BaseModel):
     id: int
     device_id: int

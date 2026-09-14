@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SiteOut(BaseModel):
@@ -62,12 +62,18 @@ class DeviceMetricsOut(BaseModel):
 
 
 class DeviceCostOut(BaseModel):
+    """Costo real del período analizado (no una proyección) — cada día se
+    valora con la tarifa que estaba vigente ese día. Ver `DevicePredictionOut`
+    para la proyección a futuro."""
+
     device_id: int
     days_analyzed: int
-    projected_monthly_kwh: float
-    tariff_mxn_per_kwh: float
-    projected_monthly_cost_mxn: float
-    note: str = "Proyeccion calculada al vuelo; la etapa 8 la persiste con Tariff real."
+    total_kwh: float
+    total_cost: float
+    currency: str
+    used_default_tariff: bool = Field(
+        description="True si el sitio no tiene ninguna Tariff configurada para algún día del período."
+    )
 
 
 class DevicePredictionOut(BaseModel):

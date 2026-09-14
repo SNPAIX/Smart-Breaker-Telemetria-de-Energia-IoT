@@ -256,7 +256,12 @@ def test_read_only_device_endpoints_return_data() -> None:
 
         cost = client.get(f"/api/v1/app/devices/{device_id}/cost", headers=_auth_headers(token))
         assert cost.status_code == 200
-        assert "projected_monthly_cost_mxn" in cost.json()
+        # Una sola lectura no arma ningun dia completo que diferenciar
+        # (compute_daily_consumption necesita al menos 2 buckets), asi que
+        # el desglose de costo real viene vacio — el prorrateo de tarifas
+        # se prueba a fondo en tests/test_tariffs.py con datos multi-dia.
+        assert "total_cost" in cost.json()
+        assert cost.json()["days_analyzed"] == 0
 
         prediction = client.get(
             f"/api/v1/app/devices/{device_id}/prediction", headers=_auth_headers(token)

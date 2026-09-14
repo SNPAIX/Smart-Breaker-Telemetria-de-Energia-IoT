@@ -36,6 +36,7 @@ from app.services.cost_projection import (
     DEFAULT_TARIFF_MXN_PER_KWH,
     project_monthly_cost,
 )
+from app.services.costs import compute_cost_breakdown
 from app.services.devices import (
     claim_device,
     compute_daily_consumption_wh,
@@ -138,14 +139,14 @@ def get_device_metrics(
 def get_device_cost(
     device: Device = Depends(get_authorized_device), db: Session = Depends(get_db)
 ) -> DeviceCostOut:
-    _, daily_wh = compute_daily_consumption_wh(db, device.id)
-    result = project_monthly_cost(daily_wh, DEFAULT_TARIFF_MXN_PER_KWH)
+    breakdown = compute_cost_breakdown(db, device)
     return DeviceCostOut(
         device_id=device.id,
-        days_analyzed=result.days_analyzed,
-        projected_monthly_kwh=result.projected_monthly_kwh,
-        tariff_mxn_per_kwh=result.tariff_mxn_per_kwh,
-        projected_monthly_cost_mxn=result.projected_monthly_cost_mxn,
+        days_analyzed=breakdown.days_analyzed,
+        total_kwh=breakdown.total_kwh,
+        total_cost=breakdown.total_cost,
+        currency=breakdown.currency,
+        used_default_tariff=breakdown.used_default_tariff,
     )
 
 

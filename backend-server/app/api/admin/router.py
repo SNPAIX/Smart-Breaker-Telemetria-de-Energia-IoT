@@ -3,7 +3,15 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_admin
 from app.db import get_db
-from app.models.entities import AnomalyAlert, Device, DeviceProfile, Event, Site, User
+from app.models.entities import (
+    AnomalyAlert,
+    Device,
+    DeviceProfile,
+    Event,
+    Site,
+    Tariff,
+    User,
+)
 from app.schemas.admin_api import (
     AdminEventOut,
     AdminOverviewOut,
@@ -19,6 +27,8 @@ from app.schemas.admin_api import (
     SiteCreateIn,
     SiteMetricsOut,
     SiteUpdateIn,
+    TariffCreateIn,
+    TariffOut,
     UserCreateIn,
     UserOut,
     UserUpdateIn,
@@ -53,6 +63,7 @@ from app.services.sites import (
     list_all_sites,
     update_site,
 )
+from app.services.tariffs import create_tariff, list_tariffs
 from app.services.users import (
     create_user,
     delete_user,
@@ -120,6 +131,22 @@ def admin_update_site(site_id: int, payload: SiteUpdateIn, db: Session = Depends
 @router.delete("/sites/{site_id}", status_code=204)
 def admin_delete_site(site_id: int, db: Session = Depends(get_db)) -> None:
     delete_site(db, get_site_or_404(db, site_id))
+
+
+@router.post("/sites/{site_id}/tariffs", response_model=TariffOut, status_code=201)
+def admin_create_tariff(
+    site_id: int, payload: TariffCreateIn, db: Session = Depends(get_db)
+) -> Tariff:
+    get_site_or_404(db, site_id)  # 404 antes de crear si el sitio no existe
+    return create_tariff(
+        db, site_id=site_id, price_per_kwh=payload.price_per_kwh, currency=payload.currency
+    )
+
+
+@router.get("/sites/{site_id}/tariffs", response_model=list[TariffOut])
+def admin_list_tariffs(site_id: int, db: Session = Depends(get_db)) -> list[Tariff]:
+    get_site_or_404(db, site_id)
+    return list_tariffs(db, site_id)
 
 
 # --- Dispositivos ---
