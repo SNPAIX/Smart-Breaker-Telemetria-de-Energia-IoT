@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_device
@@ -17,6 +17,7 @@ from app.schemas.iot import (
 )
 from app.services.anomaly_alerts import evaluate_and_record_anomaly
 from app.services.cutoff_rules import evaluate_cutoff
+from app.services.notifications import notify_anomaly_by_id, notify_event_by_id
 from app.services.voltage_rules import evaluate_voltage
 
 # Aprovisionamiento (dispositivo sin site_id -> vinculado a una cuenta): el
@@ -32,7 +33,7 @@ logger = get_logger("voltguard.iot")
 
 def evaluate_and_act(
     device: Device, reading: TelemetryReading, db: Session, received_at: datetime
-) -> Command | None:
+) -> tuple[Command | None, Event | None]:
     """Motor de reglas de corte (RF-4): evalúa la lectura contra el perfil
     del dispositivo y, si es peligrosa, crea el Event/Command de apagado en
     la misma transacción síncrona (sin colas ni jobs async) para cumplir la
@@ -44,7 +45,7 @@ def evaluate_and_act(
     en la etapa 6, nunca automática desde este flujo.
     """
     if device.is_locked_out or device.profile is None:
-        return None
+        return None, None
 
     cutoff = evaluate_cutoff(
         current_a=reading.current,
@@ -71,15 +72,17 @@ def evaluate_and_act(
             "max_voltage_v": voltage.max_voltage_v,
         }
     else:
-        return None
+        return None, None
 
-    db.add(Event(device_id=device.id, type=event_type, payload=payload))
+    event = Event(device_id=device.id, type=event_type, payload=payload)
+    db.add(event)
     command = Command(device_id=device.id, type="SET_RELAY_OFF", status="PENDING")
     db.add(command)
     device.desired_state = "OFF"
     device.is_locked_out = True
     db.commit()
     db.refresh(command)
+    db.refresh(event)
 
     reaction_ms = (datetime.now(UTC) - received_at).total_seconds() * 1000
     logger.warning(
@@ -91,12 +94,13 @@ def evaluate_and_act(
             "reaction_ms": round(reaction_ms, 2),
         },
     )
-    return command
+    return command, event
 
 
 @router.post("/telemetry", response_model=TelemetryAck)
 def receive_telemetry(
     payload: TelemetryIn,
+    background_tasks: BackgroundTasks,
     device: Device = Depends(get_current_device),
     db: Session = Depends(get_db),
 ) -> TelemetryAck:
@@ -148,11 +152,18 @@ def receive_telemetry(
     db.commit()
     db.refresh(reading)
 
-    command = evaluate_and_act(device, reading, db, received_at)
+    command, event = evaluate_and_act(device, reading, db, received_at)
 
     # Detección de anomalías (etapa 9): informativa, independiente del
     # motor de reglas de corte — nunca corta la energía por sí sola.
-    evaluate_and_record_anomaly(db, device, reading)
+    anomaly_alert = evaluate_and_record_anomaly(db, device, reading)
+
+    # Notificaciones (etapa 10) en background: no bloquean esta respuesta,
+    # que es la que debe cumplir la métrica de reacción <500ms.
+    if event is not None:
+        background_tasks.add_task(notify_event_by_id, event.id)
+    if anomaly_alert is not None:
+        background_tasks.add_task(notify_anomaly_by_id, anomaly_alert.id)
 
     return TelemetryAck(
         status="success",

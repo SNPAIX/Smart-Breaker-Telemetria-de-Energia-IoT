@@ -124,23 +124,23 @@ def switch_device(db: Session, device: Device, desired_state: str) -> Command:
     return command
 
 
-def reactivate_device(db: Session, device: Device, actor: User) -> Command:
+def reactivate_device(db: Session, device: Device, actor: User) -> tuple[Command, Event]:
     """Reactivación explícita tras un evento crítico: limpia el bloqueo,
     deja trazabilidad de quién reactivó y emite la orden de encendido."""
     device.is_locked_out = False
     device.desired_state = "ON"
-    db.add(
-        Event(
-            device_id=device.id,
-            type="MANUAL_REACTIVATION",
-            payload={"reactivated_by_user_id": actor.id},
-        )
+    event = Event(
+        device_id=device.id,
+        type="MANUAL_REACTIVATION",
+        payload={"reactivated_by_user_id": actor.id},
     )
+    db.add(event)
     command = Command(device_id=device.id, type="SET_RELAY_ON", status="PENDING")
     db.add(command)
     db.commit()
     db.refresh(command)
-    return command
+    db.refresh(event)
+    return command, event
 
 
 def claim_device(db: Session, device: Device, site_id: int) -> Device:

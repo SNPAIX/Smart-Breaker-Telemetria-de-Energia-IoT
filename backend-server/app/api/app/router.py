@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
@@ -42,6 +42,7 @@ from app.services.devices import (
     reactivate_device,
     switch_device,
 )
+from app.services.notifications import notify_event_by_id
 from app.services.predictions import get_or_generate_prediction
 from app.services.sites import list_site_devices, list_user_sites
 
@@ -172,11 +173,13 @@ def switch(
 
 @router.post("/devices/{device_id}/reactivate", response_model=DeviceStateOut)
 def reactivate(
+    background_tasks: BackgroundTasks,
     device: Device = Depends(get_authorized_device),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DeviceStateOut:
-    reactivate_device(db, device, current_user)
+    _command, event = reactivate_device(db, device, current_user)
+    background_tasks.add_task(notify_event_by_id, event.id)
     return DeviceStateOut(
         device_id=device.id,
         desired_state=device.desired_state,

@@ -20,6 +20,15 @@ TEST_USER_B = "app_api_test_b@voltguard.com"
 
 def _cleanup() -> None:
     db = SessionLocal()
+    # Usuarios primero (db.delete() por fila, no en bloque): las
+    # notificaciones de la etapa 10 referencian Event, asi que hay que
+    # borrarlas (via cascada de User.notifications) antes de poder borrar
+    # los Event de mas abajo.
+    for email in (TEST_USER_A, TEST_USER_B):
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            db.delete(user)
+            db.commit()
     for public_id in (TEST_DEVICE_A, TEST_DEVICE_B):
         device = db.query(Device).filter(Device.public_id == public_id).first()
         if device:
@@ -36,13 +45,6 @@ def _cleanup() -> None:
         synchronize_session=False
     )
     db.commit()
-    # db.delete() por usuario (no delete en bloque) para que la cascada de
-    # User.notifications / User.notification_preferences se aplique.
-    for email in (TEST_USER_A, TEST_USER_B):
-        user = db.query(User).filter(User.email == email).first()
-        if user:
-            db.delete(user)
-            db.commit()
     db.close()
 
 
