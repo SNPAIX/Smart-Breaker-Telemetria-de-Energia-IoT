@@ -1,8 +1,9 @@
 import json
 import logging
-import os
 import sys
 from typing import Any, ClassVar
+
+from app.config import settings
 
 
 class JSONFormatter(logging.Formatter):
@@ -46,7 +47,7 @@ def configure_logging() -> None:
     para poder subir a DEBUG en un contenedor específico sin reconstruir
     la imagen.
     """
-    level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    level_name = settings.log_level.upper()
     level = getattr(logging, level_name, logging.INFO)
 
     handler = logging.StreamHandler(sys.stdout)

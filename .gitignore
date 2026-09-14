@@ -260,3 +260,8 @@ ios/
 # Roadmap de ejecución (uso local, no se versiona)
 # ============================================================
 /roadmap/
+
+# ============================================================
+# Configuración local de herramientas de asistencia (no se versiona)
+# ============================================================
+/.claude/

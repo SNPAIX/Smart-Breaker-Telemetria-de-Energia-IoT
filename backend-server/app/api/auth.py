@@ -19,7 +19,7 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)) -> User:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="El correo electrónico ya está registrado."
         )
-    
+
     # Crear nuevo usuario con contraseña encriptada
     hashed_pwd = get_password_hash(user_in.password)
     new_user = User(
@@ -30,7 +30,7 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)) -> User:
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    
+
     return new_user
 
 
@@ -47,7 +47,7 @@ def login_for_access_token(
             detail="Correo o contraseña incorrectos",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     # Generar Token JWT
     access_token = create_access_token(subject=user.id, role=user.role)
     return {"access_token": access_token, "token_type": "bearer"}

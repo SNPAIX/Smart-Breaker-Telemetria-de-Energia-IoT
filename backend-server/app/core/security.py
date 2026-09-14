@@ -1,22 +1,22 @@
-import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
 from jose import jwt
 
+from app.config import settings
 from app.core.logging_config import get_logger
 
 logger = get_logger("voltguard.security")
 
-# La clave se lee de la variable de entorno SECRET_KEY. El valor de aquí
-# abajo es SOLO un fallback para desarrollo local sin .env — nunca se debe
-# usar en producción. En CI y en despliegue real, SECRET_KEY viene de un
-# secret (ver .env.example y Settings > Secrets en GitHub Actions).
+# La clave se lee de Settings (variable de entorno SECRET_KEY o .env). El
+# valor de aquí abajo es SOLO un fallback para desarrollo local sin .env —
+# nunca se debe usar en producción. En CI y en despliegue real, SECRET_KEY
+# viene de un secret (ver .env.example y Settings > Secrets en GitHub Actions).
 _DEV_FALLBACK_KEY = "dev-only-insecure-key-set-SECRET_KEY-env-var"
-SECRET_KEY = os.getenv("SECRET_KEY", _DEV_FALLBACK_KEY)
+SECRET_KEY = settings.secret_key
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 días
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
 
 
 def _warn_if_insecure_key(key: str) -> None:

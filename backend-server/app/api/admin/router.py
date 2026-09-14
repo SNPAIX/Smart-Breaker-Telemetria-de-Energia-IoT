@@ -7,7 +7,7 @@ from app.models.entities import Device, User
 from app.schemas.device import DeviceCreate, DeviceOut
 
 router = APIRouter(
-    prefix="/api/v1/admin", 
+    prefix="/api/v1/admin",
     tags=["Admin & Dashboard"],
     dependencies=[Depends(get_current_admin)]  # Protege TODAS las rutas de este archivo
 )
@@ -21,7 +21,7 @@ def register_device(device_in: DeviceCreate, db: Session = Depends(get_db)) -> D
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="El ID del dispositivo ya existe."
         )
-    
+
     new_device = Device(
         id=device_in.id,
         name=device_in.name,
@@ -38,7 +38,7 @@ def get_global_metrics(db: Session = Depends(get_db)) -> dict[str, object]:
     total_devices = db.query(Device).count()
     active_devices = db.query(Device).filter(Device.relay_status == True).count()
     total_users = db.query(User).filter(User.role == "user").count()
-    
+
     return {
         "total_devices": total_devices,
         "active_devices": active_devices,

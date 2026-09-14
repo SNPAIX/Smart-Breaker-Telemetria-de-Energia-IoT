@@ -1,15 +1,14 @@
-import os
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.api.iot.router import _get_device_or_404
 from app.core.dependencies import get_current_admin
-from app.core.logging_config import get_logger
 from app.db import get_db
-from app.models.entities import Alert, Device, Reading, SafetyEvent
+from app.models.entities import Alert, Reading, SafetyEvent
 from app.schemas.device import DeviceOut
 from app.schemas.intelligence import (
     AlertOut,
@@ -18,130 +17,16 @@ from app.schemas.intelligence import (
     SafetyEventOut,
     SafetyThresholdUpdate,
 )
-from app.schemas.telemetry import TelemetryReadingCreate, TelemetryResponse
-from app.services.anomaly_detector import get_detector
 from app.services.cost_projection import (
     DEFAULT_TARIFF_MXN_PER_KWH,
     project_monthly_cost,
 )
-from app.services.cutoff_rules import evaluate_cutoff
 
-router = APIRouter(prefix="/api/v1/telemetry", tags=["Operative IoT"])
 devices_router = APIRouter(
     prefix="/api/v1/dispositivos",
     tags=["Devices - Safety & Intelligence"],
     dependencies=[Depends(get_current_admin)],  # Protege TODAS las rutas de este router
 )
-
-# Estrategia activa de detección: "rule_based" (sin IA, default) o
-# "isolation_forest" (con IA). Configurable por variable de entorno para
-# poder demostrar ambas versiones sin tocar código ni reiniciar servicios.
-DETECTOR_STRATEGY = os.getenv("ANOMALY_DETECTOR", "rule_based")
-
-logger = get_logger("voltguard.operative")
-
-
-def _get_device_or_404(db: Session, device_id: str) -> Device:
-    device = db.query(Device).filter(Device.id == device_id).first()
-    if not device:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Dispositivo '{device_id}' no registrado.",
-        )
-    return device
-
-
-@router.post("/readings", response_model=TelemetryResponse)
-def receive_telemetry(
-    payload: TelemetryReadingCreate, db: Session = Depends(get_db)
-) -> TelemetryResponse:
-    device = _get_device_or_404(db, payload.device_id)
-
-    # 1. Motor de reglas de corte (RF-4): umbral absoluto de seguridad.
-    # Se evalúa primero y de forma síncrona, antes que cualquier otra
-    # lógica, para minimizar el tiempo de reacción de seguridad (<500ms).
-    alert_msg = None
-    cutoff = evaluate_cutoff(
-        current_a=payload.current,
-        max_current_a=device.max_current_threshold,
-        auto_cutoff_enabled=device.auto_cutoff_enabled,
-    )
-    if cutoff.triggered:
-        device.relay_status = False
-        db.add(
-            SafetyEvent(
-                device_id=device.id,
-                event_type="CRITICAL_OVERLOAD",
-                current=cutoff.current_a,
-                max_current_threshold=cutoff.max_current_a,
-                action_taken="SHUTDOWN_ORDER_ISSUED",
-            )
-        )
-        alert_msg = (
-            f"SOBRECARGA DETECTADA: {payload.current}A excede el límite de "
-            f"{device.max_current_threshold}A"
-        )
-        logger.warning(
-            "safety_cutoff_triggered",
-            extra={
-                "device_id": device.id,
-                "event_type": "CRITICAL_OVERLOAD",
-                "current": cutoff.current_a,
-                "max_current_threshold": cutoff.max_current_a,
-                "action_taken": "SHUTDOWN_ORDER_ISSUED",
-            },
-        )
-
-    # 2. Detector de anomalías (estadístico, relativo al historial del
-    # propio dispositivo) — informativo, nunca corta la energía.
-    history = [
-        r.power
-        for r in db.query(Reading)
-        .filter(Reading.device_id == device.id)
-        .order_by(Reading.recorded_at.desc())
-        .limit(50)
-        .all()
-    ]
-    detector = get_detector(DETECTOR_STRATEGY)
-    result = detector.evaluate(history, payload.power)
-
-    new_reading = Reading(
-        device_id=payload.device_id,
-        voltage=payload.voltage,
-        current=payload.current,
-        power=payload.power,
-        frequency=payload.frequency,
-        power_factor=payload.power_factor,
-        energy=payload.energy,
-    )
-    db.add(new_reading)
-
-    if result.is_anomaly:
-        db.add(
-            Alert(
-                device_id=device.id,
-                power=payload.power,
-                expected_power=result.expected_power_w,
-                detector=result.detector_name,
-            )
-        )
-        logger.info(
-            "anomaly_detected",
-            extra={
-                "device_id": device.id,
-                "power": payload.power,
-                "expected_power": result.expected_power_w,
-                "detector": result.detector_name,
-            },
-        )
-
-    db.commit()
-
-    return TelemetryResponse(
-        status="critical_overload" if cutoff.triggered else "success",
-        relay_status=device.relay_status,
-        alert=alert_msg,
-    )
 
 
 # --- Motor de reglas de corte: configuración y auditoría ---

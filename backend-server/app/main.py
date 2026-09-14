@@ -2,8 +2,8 @@ import time
 
 from fastapi import FastAPI, Request, Response
 
+from app.api import admin, auth, iot
 from app.core.logging_config import configure_logging, get_logger
-from app.routers import admin, auth, operative  # <--- Asegúrate de incluir 'admin' aquí
 
 configure_logging()
 logger = get_logger("voltguard.http")
@@ -36,9 +36,9 @@ async def log_requests(request: Request, call_next: object) -> Response:
 
 # Registrar Routers
 app.include_router(auth.router)
-app.include_router(operative.router)
-app.include_router(operative.devices_router)
-app.include_router(admin.router)  # <--- Aquí es donde se usa
+app.include_router(iot.router)
+app.include_router(admin.router)
+app.include_router(admin.devices_router)
 
 
 @app.get("/health")

@@ -23,7 +23,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH=/root/.local/bin:$PATH
 
 COPY --from=builder /root/.local /root/.local
-COPY . .
+COPY --chmod=644 . .
 
 EXPOSE 8000
 
