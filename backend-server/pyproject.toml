@@ -8,7 +8,12 @@ line-length = 88
 target-version = "py312"
 
 [tool.ruff.lint]
-ignore = ["B008"]  # Permite Depends() y Query() de FastAPI
+ignore = [
+    "B008",   # Permite Depends() y Query() de FastAPI
+    "EXE002", # El bit de ejecutable no es fiable en un bind-mount desde Windows;
+              # el modo real que importa es el que trackea git (100644), no el
+              # que reporta el filesystem del host durante desarrollo local.
+]
 
 [tool.mypy]
 python_version = "3.12"

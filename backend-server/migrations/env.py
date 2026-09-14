@@ -4,23 +4,29 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 # Importar Base y Modelos
+from app.config import settings
 from app.db import Base
 from app.models.entities import (  # noqa: F401
-    Alert,
+    AnomalyAlert,
+    Command,
     Device,
-    DeviceGroup,
-    Reading,
-    SafetyEvent,
+    DeviceCredential,
+    DeviceProfile,
+    Event,
+    Notification,
+    NotificationPreference,
+    Prediction,
+    Site,
+    SiteMember,
+    Tariff,
+    TelemetryReading,
     User,
 )
 
 config = context.config
 
-# Configuración de URL dinámica desde variables de entorno
-import os
-
-db_url = os.getenv("DATABASE_URL", "postgresql://voltguard_user:supersecretpassword@localhost:5432/voltguard_db")
-config.set_main_option("sqlalchemy.url", db_url)
+# Misma fuente de verdad que el resto de la app (ver app/config.py, etapa 1).
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

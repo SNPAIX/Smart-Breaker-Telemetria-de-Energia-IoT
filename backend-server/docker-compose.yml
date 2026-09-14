@@ -24,6 +24,13 @@ services:
     environment:
       - DATABASE_URL=postgresql://voltguard_user:supersecretpassword@db:5432/voltguard_db
       - SECRET_KEY=${SECRET_KEY:-dev-only-insecure-key-set-SECRET_KEY-env-var}
+    volumes:
+      # Bind-mount de desarrollo: refleja cambios de código sin reconstruir
+      # la imagen y hace que lo generado dentro del contenedor (ej. una
+      # migración nueva de Alembic) quede también en el host. La imagen de
+      # producción (etapa 15) sigue construyéndose con el Dockerfile tal
+      # cual, vía `COPY . .` — este volumen no lo afecta.
+      - .:/app
     depends_on:
       db:
         condition: service_healthy
