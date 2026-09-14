@@ -12,6 +12,7 @@ from app.models.entities import (
     Event,
     Notification,
     NotificationPreference,
+    Prediction,
     Site,
     SiteMember,
     TelemetryReading,
@@ -32,10 +33,6 @@ from app.schemas.app_api import (
     SwitchIn,
     TelemetryOut,
 )
-from app.services.cost_projection import (
-    DEFAULT_TARIFF_MXN_PER_KWH,
-    project_monthly_cost,
-)
 from app.services.costs import compute_cost_breakdown
 from app.services.devices import (
     claim_device,
@@ -45,6 +42,7 @@ from app.services.devices import (
     reactivate_device,
     switch_device,
 )
+from app.services.predictions import get_or_generate_prediction
 from app.services.sites import list_site_devices, list_user_sites
 
 router = APIRouter(prefix="/api/v1/app", tags=["App (usuario final)"])
@@ -153,15 +151,8 @@ def get_device_cost(
 @router.get("/devices/{device_id}/prediction", response_model=DevicePredictionOut)
 def get_device_prediction(
     device: Device = Depends(get_authorized_device), db: Session = Depends(get_db)
-) -> DevicePredictionOut:
-    _, daily_wh = compute_daily_consumption_wh(db, device.id)
-    result = project_monthly_cost(daily_wh, DEFAULT_TARIFF_MXN_PER_KWH)
-    return DevicePredictionOut(
-        device_id=device.id,
-        projected_monthly_kwh=result.projected_monthly_kwh,
-        trend_wh_per_day=result.trend_wh_per_day,
-        is_trending_up=result.is_trending_up,
-    )
+) -> Prediction:
+    return get_or_generate_prediction(db, device)
 
 
 @router.post("/devices/{device_id}/switch", response_model=DeviceStateOut)

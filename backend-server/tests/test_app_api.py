@@ -267,7 +267,7 @@ def test_read_only_device_endpoints_return_data() -> None:
             f"/api/v1/app/devices/{device_id}/prediction", headers=_auth_headers(token)
         )
         assert prediction.status_code == 200
-        assert "projected_monthly_kwh" in prediction.json()
+        assert "projected_kwh" in prediction.json()
     finally:
         _cleanup()
 

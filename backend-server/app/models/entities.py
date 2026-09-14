@@ -166,6 +166,9 @@ class Device(Base):
     anomaly_alerts: Mapped[list["AnomalyAlert"]] = relationship(
         back_populates="device", cascade="all, delete-orphan"
     )
+    predictions: Mapped[list["Prediction"]] = relationship(
+        back_populates="device", cascade="all, delete-orphan"
+    )
 
 
 class DeviceCredential(Base):
@@ -320,3 +323,5 @@ class Prediction(Base):
     projected_kwh: Mapped[float] = mapped_column(Float)
     projected_cost: Mapped[float] = mapped_column(Float)
     method: Mapped[str] = mapped_column(String(50))
+
+    device: Mapped[Device] = relationship(back_populates="predictions")

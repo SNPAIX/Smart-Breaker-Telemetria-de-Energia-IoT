@@ -77,12 +77,17 @@ class DeviceCostOut(BaseModel):
 
 
 class DevicePredictionOut(BaseModel):
+    """Refleja directamente una fila persistida de `Prediction` — generada
+    de forma perezosa y cacheada (ver `app/services/predictions.py`)."""
+
     device_id: int
-    projected_monthly_kwh: float
-    trend_wh_per_day: float
-    is_trending_up: bool
-    method: str = "linear_trend_v0"
-    note: str = "La etapa 9 persiste esto en Prediction y agrega deteccion de anomalias."
+    horizon: str
+    projected_kwh: float
+    projected_cost: float
+    method: str
+    generated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class NotificationOut(BaseModel):

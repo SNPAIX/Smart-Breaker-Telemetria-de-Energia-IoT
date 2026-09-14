@@ -15,6 +15,7 @@ from app.schemas.iot import (
     TelemetryAck,
     TelemetryIn,
 )
+from app.services.anomaly_alerts import evaluate_and_record_anomaly
 from app.services.cutoff_rules import evaluate_cutoff
 from app.services.voltage_rules import evaluate_voltage
 
@@ -148,6 +149,10 @@ def receive_telemetry(
     db.refresh(reading)
 
     command = evaluate_and_act(device, reading, db, received_at)
+
+    # Detección de anomalías (etapa 9): informativa, independiente del
+    # motor de reglas de corte — nunca corta la energía por sí sola.
+    evaluate_and_record_anomaly(db, device, reading)
 
     return TelemetryAck(
         status="success",
