@@ -248,6 +248,7 @@ ios/
 .vscode/launch.json
 .vscode/ipch/
 *.ino.cpp
+/ino/README.md
 
 # ============================================================
 # Secretos y configuración local compartida
