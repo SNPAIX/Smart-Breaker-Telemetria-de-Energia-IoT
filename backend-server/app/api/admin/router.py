@@ -9,6 +9,7 @@ from app.models.entities import (
     DeviceProfile,
     Event,
     Site,
+    SiteMember,
     Tariff,
     User,
 )
@@ -25,6 +26,8 @@ from app.schemas.admin_api import (
     ProfileOut,
     ProfileUpdateIn,
     SiteCreateIn,
+    SiteMemberIn,
+    SiteMemberOut,
     SiteMetricsOut,
     SiteUpdateIn,
     TariffCreateIn,
@@ -57,10 +60,13 @@ from app.services.devices import (
     update_device,
 )
 from app.services.sites import (
+    add_site_member,
     create_site,
     delete_site,
     get_site_or_404,
     list_all_sites,
+    list_site_members,
+    remove_site_member,
     update_site,
 )
 from app.services.tariffs import create_tariff, list_tariffs
@@ -131,6 +137,25 @@ def admin_update_site(site_id: int, payload: SiteUpdateIn, db: Session = Depends
 @router.delete("/sites/{site_id}", status_code=204)
 def admin_delete_site(site_id: int, db: Session = Depends(get_db)) -> None:
     delete_site(db, get_site_or_404(db, site_id))
+
+
+@router.get("/sites/{site_id}/members", response_model=list[SiteMemberOut])
+def admin_list_site_members(site_id: int, db: Session = Depends(get_db)) -> list[SiteMember]:
+    get_site_or_404(db, site_id)
+    return list_site_members(db, site_id)
+
+
+@router.post("/sites/{site_id}/members", response_model=SiteMemberOut, status_code=201)
+def admin_add_site_member(
+    site_id: int, payload: SiteMemberIn, db: Session = Depends(get_db)
+) -> SiteMember:
+    get_site_or_404(db, site_id)
+    return add_site_member(db, site_id, payload.user_id, payload.role)
+
+
+@router.delete("/sites/{site_id}/members/{user_id}", status_code=204)
+def admin_remove_site_member(site_id: int, user_id: int, db: Session = Depends(get_db)) -> None:
+    remove_site_member(db, site_id, user_id)
 
 
 @router.post("/sites/{site_id}/tariffs", response_model=TariffOut, status_code=201)

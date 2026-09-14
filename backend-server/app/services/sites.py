@@ -61,3 +61,39 @@ def delete_site(db: Session, site: Site) -> None:
         )
     db.delete(site)  # cascada: SiteMember, Tariff
     db.commit()
+
+
+def list_site_members(db: Session, site_id: int) -> list[SiteMember]:
+    return db.query(SiteMember).filter(SiteMember.site_id == site_id).all()
+
+
+def add_site_member(db: Session, site_id: int, user_id: int, role: str = "member") -> SiteMember:
+    existing = (
+        db.query(SiteMember)
+        .filter(SiteMember.site_id == site_id, SiteMember.user_id == user_id)
+        .first()
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El usuario ya pertenece a este sitio.",
+        )
+    member = SiteMember(site_id=site_id, user_id=user_id, role=role)
+    db.add(member)
+    db.commit()
+    db.refresh(member)
+    return member
+
+
+def remove_site_member(db: Session, site_id: int, user_id: int) -> None:
+    member = (
+        db.query(SiteMember)
+        .filter(SiteMember.site_id == site_id, SiteMember.user_id == user_id)
+        .first()
+    )
+    if member is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="El usuario no pertenece a este sitio."
+        )
+    db.delete(member)
+    db.commit()

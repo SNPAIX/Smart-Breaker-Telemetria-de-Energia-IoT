@@ -34,6 +34,20 @@ class SiteUpdateIn(BaseModel):
     kind: str | None = None
 
 
+class SiteMemberIn(BaseModel):
+    user_id: int
+    role: str = "member"
+
+
+class SiteMemberOut(BaseModel):
+    id: int
+    site_id: int
+    user_id: int
+    role: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class DeviceCreateIn(BaseModel):
     public_id: str
     name: str

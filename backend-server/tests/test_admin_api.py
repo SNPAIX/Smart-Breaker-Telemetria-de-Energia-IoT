@@ -267,6 +267,56 @@ def test_not_found_responses_for_unknown_ids() -> None:
         _cleanup()
 
 
+def test_admin_can_add_and_remove_site_members() -> None:
+    _cleanup()
+    try:
+        token = _admin_token()
+        site_response = client.post(
+            "/api/v1/admin/sites", headers=_auth(token), json={"name": TEST_SITE_1, "kind": "casa"}
+        )
+        site_id = site_response.json()["id"]
+
+        db = SessionLocal()
+        normal_user = User(
+            email=NORMAL_EMAIL, hashed_password=get_password_hash("password123"), role="user"
+        )
+        db.add(normal_user)
+        db.commit()
+        user_id = normal_user.id
+        db.close()
+
+        add_response = client.post(
+            f"/api/v1/admin/sites/{site_id}/members",
+            headers=_auth(token),
+            json={"user_id": user_id, "role": "owner"},
+        )
+        assert add_response.status_code == 201
+        assert add_response.json()["role"] == "owner"
+
+        duplicate_response = client.post(
+            f"/api/v1/admin/sites/{site_id}/members",
+            headers=_auth(token),
+            json={"user_id": user_id, "role": "member"},
+        )
+        assert duplicate_response.status_code == 400
+
+        list_response = client.get(f"/api/v1/admin/sites/{site_id}/members", headers=_auth(token))
+        assert list_response.status_code == 200
+        assert len(list_response.json()) == 1
+
+        remove_response = client.delete(
+            f"/api/v1/admin/sites/{site_id}/members/{user_id}", headers=_auth(token)
+        )
+        assert remove_response.status_code == 204
+
+        list_after_remove = client.get(
+            f"/api/v1/admin/sites/{site_id}/members", headers=_auth(token)
+        )
+        assert list_after_remove.json() == []
+    finally:
+        _cleanup()
+
+
 def test_user_crud() -> None:
     _cleanup()
     try:
