@@ -100,6 +100,10 @@ class DeviceProfile(Base):
     site_id: Mapped[int | None] = mapped_column(ForeignKey("sites.id"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(100), default="default")
     max_current_a: Mapped[float] = mapped_column(Float, default=15.0)
+    # Nullable: un perfil sin límites de voltaje configurados no dispara la
+    # regla de sobre/bajo voltaje (ver app/services/voltage_rules.py).
+    min_voltage_v: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_voltage_v: Mapped[float | None] = mapped_column(Float, nullable=True)
     auto_cutoff_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -129,6 +133,12 @@ class Device(Base):
     # relé haya cambiado físicamente (actual_state) — ver Command.
     desired_state: Mapped[str] = mapped_column(String(10), default="OFF")
     actual_state: Mapped[str] = mapped_column(String(10), default="UNKNOWN")
+
+    # Tras un evento crítico (sobrecorriente o sobre/bajo voltaje) queda en
+    # True y bloquea cualquier reactivación automática: solo un endpoint
+    # explícito (etapa 6, /api/v1/app/devices/{id}/reactivate) puede
+    # limpiarlo. Ningún flujo de telemetría/heartbeat lo modifica a False.
+    is_locked_out: Mapped[bool] = mapped_column(Boolean, default=False)
 
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     firmware_version: Mapped[str | None] = mapped_column(String(50), nullable=True)

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_current_device
 from app.core.logging_config import get_logger
 from app.db import get_db
-from app.models.entities import Command, Device, TelemetryReading
+from app.models.entities import Command, Device, Event, TelemetryReading
 from app.schemas.iot import (
     CommandAckIn,
     CommandOut,
@@ -15,6 +15,8 @@ from app.schemas.iot import (
     TelemetryAck,
     TelemetryIn,
 )
+from app.services.cutoff_rules import evaluate_cutoff
+from app.services.voltage_rules import evaluate_voltage
 
 # Aprovisionamiento (dispositivo sin site_id -> vinculado a una cuenta): el
 # endpoint que resuelve el vínculo vive en /api/v1/app/devices/claim, lo
@@ -28,14 +30,67 @@ logger = get_logger("voltguard.iot")
 
 
 def evaluate_and_act(
-    device: Device, reading: TelemetryReading, db: Session
+    device: Device, reading: TelemetryReading, db: Session, received_at: datetime
 ) -> Command | None:
-    """Punto de integración del motor de reglas de corte (etapa 5).
+    """Motor de reglas de corte (RF-4): evalúa la lectura contra el perfil
+    del dispositivo y, si es peligrosa, crea el Event/Command de apagado en
+    la misma transacción síncrona (sin colas ni jobs async) para cumplir la
+    métrica de reacción <500ms de la propuesta.
 
-    Por ahora es un stub que no hace nada: esta etapa entrega el transporte
-    de telemetría/comandos, no la decisión de seguridad.
+    Si el dispositivo ya está bloqueado por un evento crítico anterior
+    (`is_locked_out`), no genera un evento/comando nuevo por cada lectura
+    repetida en la misma condición — la reactivación es explícita y llega
+    en la etapa 6, nunca automática desde este flujo.
     """
-    return None
+    if device.is_locked_out or device.profile is None:
+        return None
+
+    cutoff = evaluate_cutoff(
+        current_a=reading.current,
+        max_current_a=device.profile.max_current_a,
+        auto_cutoff_enabled=device.profile.auto_cutoff_enabled,
+    )
+    voltage = evaluate_voltage(
+        voltage_v=reading.voltage,
+        min_voltage_v=device.profile.min_voltage_v,
+        max_voltage_v=device.profile.max_voltage_v,
+    )
+
+    if cutoff.triggered:
+        event_type = "CRITICAL_OVERLOAD"
+        payload: dict[str, float | None] = {
+            "current_a": cutoff.current_a,
+            "max_current_a": cutoff.max_current_a,
+        }
+    elif voltage.triggered:
+        event_type = f"CRITICAL_{voltage.reason}"
+        payload = {
+            "voltage_v": voltage.voltage_v,
+            "min_voltage_v": voltage.min_voltage_v,
+            "max_voltage_v": voltage.max_voltage_v,
+        }
+    else:
+        return None
+
+    db.add(Event(device_id=device.id, type=event_type, payload=payload))
+    command = Command(device_id=device.id, type="SET_RELAY_OFF", status="PENDING")
+    db.add(command)
+    device.desired_state = "OFF"
+    device.is_locked_out = True
+    db.commit()
+    db.refresh(command)
+
+    reaction_ms = (datetime.now(UTC) - received_at).total_seconds() * 1000
+    logger.warning(
+        "critical_event_triggered",
+        extra={
+            "device_id": device.id,
+            "event_type": event_type,
+            "command_id": command.id,
+            "reaction_ms": round(reaction_ms, 2),
+        },
+    )
+    return command
 
 
 @router.post("/telemetry", response_model=TelemetryAck)
@@ -44,6 +99,7 @@ def receive_telemetry(
     device: Device = Depends(get_current_device),
     db: Session = Depends(get_db),
 ) -> TelemetryAck:
+    received_at = datetime.now(UTC)
     already_seen = (
         db.query(TelemetryReading)
         .filter(
@@ -91,7 +147,7 @@ def receive_telemetry(
     db.commit()
     db.refresh(reading)
 
-    command = evaluate_and_act(device, reading, db)
+    command = evaluate_and_act(device, reading, db, received_at)
 
     return TelemetryAck(
         status="success",
