@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# Proyectos nativos generados por `npx cap add` — se regeneran desde
+# capacitor.config.ts + package.json, no se versionan (mismo criterio que
+# `front/` para node_modules/dist).
+android/
+ios/
