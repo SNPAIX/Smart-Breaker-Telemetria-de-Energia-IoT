@@ -86,6 +86,17 @@ void handleSave()
         saveBackendBaseUrl(server.arg("backend_url"));
     }
 
+    Serial.println();
+    Serial.println("====================================");
+    Serial.println("Formulario de aprovisionamiento recibido:");
+    Serial.print("  ssid='"); Serial.print(server.arg("ssid")); Serial.println("'");
+    Serial.print("  password_len="); Serial.println(server.arg("password").length());
+    Serial.print("  backend_url='"); Serial.print(server.hasArg("backend_url") ? server.arg("backend_url") : "(vacio, usa default)"); Serial.println("'");
+    Serial.print("  public_id='"); Serial.print(server.arg("public_id")); Serial.println("'");
+    Serial.print("  device_secret_len="); Serial.println(server.arg("device_secret").length());
+    Serial.println("Guardando y reiniciando...");
+    Serial.println("====================================");
+
     server.send(200, "text/html", "<html><body>Guardado. Reiniciando...</body></html>");
     delay(500);
     ESP.restart();
@@ -96,7 +107,8 @@ void startAccessPoint()
     currentMode = Mode::ACCESS_POINT;
 
     WiFi.mode(WIFI_AP);
-    WiFi.softAP(apSsid().c_str());
+    delay(100);
+    bool apOk = WiFi.softAP(apSsid().c_str());
 
     dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
 
@@ -109,6 +121,12 @@ void startAccessPoint()
     Serial.println("====================================");
     Serial.print("Portal de aprovisionamiento activo: ");
     Serial.println(apSsid());
+    Serial.print("softAP() devolvio: ");
+    Serial.println(apOk ? "true" : "false");
+    Serial.print("IP del AP: ");
+    Serial.println(WiFi.softAPIP());
+    Serial.print("MAC del AP: ");
+    Serial.println(WiFi.softAPmacAddress());
     Serial.println("====================================");
 }
 
@@ -117,6 +135,12 @@ void startStation()
     currentMode = Mode::STATION;
 
     WiFi.mode(WIFI_STA);
+    Serial.println();
+    Serial.println("====================================");
+    Serial.print("Conectando a WiFi guardado, SSID: '");
+    Serial.print(getWifiSsid());
+    Serial.println("'");
+    Serial.println("====================================");
     WiFi.begin(getWifiSsid().c_str(), getWifiPassword().c_str());
 
     server.on("/", handleRoot);
@@ -148,15 +172,31 @@ void provisioningLoop()
 
     server.handleClient();
 
-    if (WiFi.status() != WL_CONNECTED)
+    static bool loggedConnected = false;
+    if (WiFi.status() == WL_CONNECTED)
     {
-        unsigned long now = millis();
-        if (now - lastReconnectAttempt >= RECONNECT_INTERVAL_MS)
+        if (!loggedConnected)
         {
-            lastReconnectAttempt = now;
-            WiFi.disconnect();
-            WiFi.begin(getWifiSsid().c_str(), getWifiPassword().c_str());
+            loggedConnected = true;
+            Serial.println();
+            Serial.println("====================================");
+            Serial.print("WiFi conectado. IP asignada: ");
+            Serial.println(WiFi.localIP());
+            Serial.println("====================================");
         }
+        return;
+    }
+
+    loggedConnected = false;
+    unsigned long now = millis();
+    if (now - lastReconnectAttempt >= RECONNECT_INTERVAL_MS)
+    {
+        lastReconnectAttempt = now;
+        Serial.print("WiFi todavia no conectado (wl_status_t=");
+        Serial.print(WiFi.status());
+        Serial.println("), reintentando...");
+        WiFi.disconnect();
+        WiFi.begin(getWifiSsid().c_str(), getWifiPassword().c_str());
     }
 }
 

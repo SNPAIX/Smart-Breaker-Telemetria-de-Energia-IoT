@@ -13,7 +13,12 @@
 namespace {
 
 constexpr unsigned long HEARTBEAT_INTERVAL_MS = 30000;
-constexpr unsigned long COMMAND_POLL_INTERVAL_MS = 10000;
+// Bajado de 10s a 3s (14-sep, HIL real): con el PZEM leyendo seguido, la
+// telemetria ya viaja casi continua y ahora entrega tambien cualquier
+// comando pendiente (ver receive_telemetry en el backend) — este poll
+// solo es la red de respaldo para cuando no hay lecturas del PZEM
+// (ej. sensor desconectado), asi que 3s sigue siendo poco trafico.
+constexpr unsigned long COMMAND_POLL_INTERVAL_MS = 3000;
 // 1 de enero de 2020 en epoch — si el reloj del ESP32 reporta menos que
 // esto, todavía no se sincronizó por NTP.
 constexpr time_t MIN_PLAUSIBLE_EPOCH = 1577836800;
@@ -53,16 +58,33 @@ void syncTimeIfNeeded()
 
 bool startRequest(HTTPClient& http, const String& path)
 {
-    String url = getBackendBaseUrl() + path;
+    String base = getBackendBaseUrl();
+    if (base.length() == 0)
+    {
+        Serial.println("ERROR red: backend_url esta vacio (no se guardo en el aprovisionamiento).");
+        return false;
+    }
+
+    String url = base + path;
+    bool began;
     if (url.startsWith("https://"))
     {
         static WiFiClientSecure secureClient;
         // MVP: sin CA pineada — ver docs/claude/HIL_TEST_PLAN.md y la
         // etapa 15 (reverse proxy/TLS) para el endurecimiento de producción.
         secureClient.setInsecure();
-        return http.begin(secureClient, url);
+        began = http.begin(secureClient, url);
     }
-    return http.begin(url);
+    else
+    {
+        began = http.begin(url);
+    }
+    if (!began)
+    {
+        Serial.print("ERROR red: no se pudo iniciar el request a ");
+        Serial.println(url);
+    }
+    return began;
 }
 
 void applyCommand(JsonObjectConst command)
@@ -121,7 +143,9 @@ void sendHeartbeat()
         return;
     }
     http.addHeader("Authorization", authorizationHeader());
-    http.POST("");
+    int statusCode = http.POST("");
+    Serial.print("Heartbeat enviado, respuesta HTTP: ");
+    Serial.println(statusCode);
     http.end();
 }
 
