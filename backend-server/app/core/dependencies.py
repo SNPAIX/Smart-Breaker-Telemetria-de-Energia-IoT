@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.security import ALGORITHM, SECRET_KEY, verify_password
 from app.db import get_db
 from app.models.entities import Device, SiteMember, User
+from app.services.devices import is_user_authorized_for_device
 
 # Le indica a FastAPI y Swagger UI dónde se obtienen los tokens
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -83,13 +84,38 @@ def get_authorized_device(
     if device is None or device.site_id is None:
         raise not_found
 
-    membership = (
-        db.query(SiteMember)
-        .filter(SiteMember.site_id == device.site_id, SiteMember.user_id == current_user.id)
-        .first()
-    )
-    if membership is None:
+    if not is_user_authorized_for_device(db, current_user.id, device_id):
         raise not_found
+
+    return device
+
+
+def authenticate_device_credential(db: Session, authorization: str | None) -> Device | None:
+    """Verifica un header `Authorization: Device <public_id>:<secret>` y
+    devuelve el `Device` si es válido, o `None` si no — nunca levanta
+    excepción, para que tanto la dependencia HTTP (`get_current_device`,
+    que sí necesita convertir esto en un 401) como el handshake WebSocket
+    (`app/api/iot/ws.py`, que necesita cerrar el socket con su propio
+    código en vez de una excepción HTTP) puedan reusar la misma
+    verificación sin duplicarla."""
+    if not authorization:
+        return None
+
+    scheme, _, param = authorization.partition(" ")
+    if scheme.lower() != "device" or not param:
+        return None
+
+    public_id, _, secret = param.partition(":")
+    if not public_id or not secret:
+        return None
+
+    device = db.query(Device).filter(Device.public_id == public_id).first()
+    if device is None or device.credential is None:
+        return None
+    if device.credential.revoked_at is not None:
+        return None
+    if not verify_password(secret, device.credential.secret_hash):
+        return None
 
     return device
 
@@ -102,25 +128,10 @@ def get_current_device(
     dispositivo se identifica con su `public_id` y un secreto propio (ver
     DeviceCredential / app/services/device_auth.py), nunca con un token de
     usuario — ciclo de vida y revocación distintos."""
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Credenciales de dispositivo inválidas.",
-    )
-
-    scheme, _, param = authorization.partition(" ")
-    if scheme.lower() != "device" or not param:
-        raise credentials_exception
-
-    public_id, _, secret = param.partition(":")
-    if not public_id or not secret:
-        raise credentials_exception
-
-    device = db.query(Device).filter(Device.public_id == public_id).first()
-    if device is None or device.credential is None:
-        raise credentials_exception
-    if device.credential.revoked_at is not None:
-        raise credentials_exception
-    if not verify_password(secret, device.credential.secret_hash):
-        raise credentials_exception
-
+    device = authenticate_device_credential(db, authorization)
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales de dispositivo inválidas.",
+        )
     return device

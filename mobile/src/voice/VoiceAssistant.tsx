@@ -40,7 +40,7 @@ export function VoiceAssistant() {
               entornos sin audio) y como alternativa accesible real. */}
           <form className="inline-form" onSubmit={handleTextSubmit}>
             <input
-              placeholder='Escribí un comando (ej. "apaga la luz de la sala")'
+              placeholder='Escribe un comando (ej. "apaga la luz de la sala")'
               value={typedText}
               onChange={(e) => setTypedText(e.target.value)}
               disabled={busy}
@@ -64,7 +64,7 @@ export function VoiceAssistant() {
 
       <button
         type="button"
-        className={`voice-fab${status === "listening" ? " listening" : ""}`}
+        className={`voice-fab${status === "idle" || status === "error" ? "" : ` ${status}`}`}
         onClick={toggleListening}
         disabled={busy}
         aria-label="Asistente de voz"

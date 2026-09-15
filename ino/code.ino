@@ -6,23 +6,24 @@
 // ============================================================
 #include "device_storage.h"
 #include "iot_client.h"
+#include "iot_ws_client.h"
 #include "provisioning.h"
 
 // ============================================================
 // CONFIGURACIÓN
 // ============================================================
 
-// Definir UART del PZEM
+// Define el UART del PZEM
 constexpr uint8_t PZEM_TX = D6;
 constexpr uint8_t PZEM_RX = D7;
 
-// Utilizar la dirección configurada previamente
+// Utiliza la dirección configurada previamente
 constexpr uint8_t PZEM_ADDRESS = 0xF8;
 
-// Definir control del relevador
+// Define el control del relevador
 constexpr uint8_t RELAY_CTRL = D2;
 
-// Crear instancia del PZEM
+// Crea la instancia del PZEM
 Mycila::PZEM pzem;
 
 
@@ -30,13 +31,13 @@ Mycila::PZEM pzem;
 // VARIABLES DE CONTROL
 // ============================================================
 
-// Guardar el estado actual del relevador
+// Guarda el estado actual del relevador
 bool relayState = false;
 
-// Guardar el instante del último cambio
+// Guarda el instante del último cambio
 unsigned long lastRelayChange = 0;
 
-// Definir intervalo de prueba
+// Define el intervalo de prueba
 constexpr unsigned long RELAY_INTERVAL = 10000;
 
 
@@ -50,7 +51,7 @@ void setRelay(bool state)
 
     if (state)
     {
-        // Activar el transistor para llevar T90 IN a LOW
+        // Activa el transistor para llevar T90 IN a LOW
         digitalWrite(RELAY_CTRL, HIGH);
 
         Serial.println();
@@ -60,7 +61,7 @@ void setRelay(bool state)
     }
     else
     {
-        // Desactivar el transistor
+        // Desactiva el transistor
         // El pull-up lleva T90 IN a 5 V
         digitalWrite(RELAY_CTRL, LOW);
 
@@ -78,7 +79,7 @@ void setRelay(bool state)
 
 void setup()
 {
-    // Configurar el relevador inicialmente apagado
+    // Configura el relevador inicialmente apagado
     pinMode(RELAY_CTRL, OUTPUT);
     digitalWrite(RELAY_CTRL, LOW);
 
@@ -92,7 +93,7 @@ void setup()
     Serial.println(" PZEM + CONTROL DEL RELE");
     Serial.println("====================================");
 
-    // Procesar eventos enviados por el PZEM
+    // Procesa los eventos enviados por el PZEM
     pzem.setCallback(
         [](const Mycila::PZEM::EventType event,
            const Mycila::PZEM::Data& data)
@@ -148,7 +149,7 @@ void setup()
         }
     );
 
-    // Inicializar comunicación UART con el PZEM
+    // Inicializa la comunicación UART con el PZEM
     pzem.begin(
         Serial1,
         PZEM_RX,
@@ -157,7 +158,7 @@ void setup()
         true
     );
 
-    // Mantener inicialmente la carga apagada
+    // Mantiene inicialmente la carga apagada
     setRelay(false);
 
     lastRelayChange = millis();
@@ -168,6 +169,7 @@ void setup()
     deviceStorageBegin();
     provisioningBegin();
     iotClientBegin();
+    iotWsClientBegin();
 }
 
 
@@ -177,13 +179,14 @@ void setup()
 
 void loop()
 {
-    // Etapa 12: reemplazar el bloque de demostracion (alternar el rele
+    // Etapa 12: reemplaza el bloque de demostracion (alternar el rele
     // cada 10s) por la orquestacion real de aprovisionamiento/red. La
     // lectura del PZEM y el corte critico local NO dependen de este loop
     // — ya corren de forma sincrona dentro del callback (ver arriba).
     provisioningLoop();
     iotClientLoop();
+    iotWsClientLoop();
 
-    // Evitar bloquear completamente el loop (tambien alimenta el watchdog)
+    // Evita bloquear completamente el loop (tambien alimenta el watchdog)
     delay(10);
 }

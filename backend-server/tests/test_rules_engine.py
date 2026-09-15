@@ -155,11 +155,21 @@ def test_no_automatic_reactivation_after_lockout() -> None:
     secret = _make_device(max_current_a=10.0)
     sim = DeviceSimulator(client=client, public_id=TEST_PUBLIC_ID, secret=secret)
     try:
-        scenario_overload(sim, sequence=1, max_current_a=10.0)
-        # Telemetria normal inmediatamente despues del corte.
+        overload_response = scenario_overload(sim, sequence=1, max_current_a=10.0)
+        lockout_command_id = overload_response.json()["command"]["id"]
+
+        # Telemetria normal inmediatamente despues del corte: no debe
+        # generarse un comando NUEVO ni un segundo evento. Si la API
+        # devuelve "command" aca es la reentrega del mismo apagado
+        # todavia pendiente (ver receive_telemetry: una vez que
+        # evaluate_and_act no genera un comando propio, se reusa el
+        # PENDING existente para que llegue mas rapido al dispositivo),
+        # no un redisparo de la regla de corte.
         normal_response = scenario_normal(sim, sequence=2)
         assert normal_response.status_code == 200
-        assert normal_response.json()["command"] is None  # no se re-dispara
+        returned_command = normal_response.json()["command"]
+        if returned_command is not None:
+            assert returned_command["id"] == lockout_command_id
 
         device = _reload_device()
         assert device.desired_state == "OFF"  # sigue apagado, no se reactivo solo

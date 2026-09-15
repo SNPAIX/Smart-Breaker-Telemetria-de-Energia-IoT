@@ -22,6 +22,11 @@ constexpr unsigned long COMMAND_POLL_INTERVAL_MS = 3000;
 // 1 de enero de 2020 en epoch — si el reloj del ESP32 reporta menos que
 // esto, todavía no se sincronizó por NTP.
 constexpr time_t MIN_PLAUSIBLE_EPOCH = 1577836800;
+// Acota el peor caso de un iotClientLoop() colgado a esto en vez de heredar
+// el default de HTTPClient (~5s sin configurar) — con 4 llamadas HTTP
+// secuenciales por ciclo (telemetria, poll de comandos, heartbeat, ack), un
+// timeout mas corto libera el loop mas rapido cuando la red falla.
+constexpr uint16_t HTTP_TIMEOUT_MS = 3000;
 
 unsigned long localSequence = 0;
 unsigned long lastHeartbeatOrTelemetryAt = 0;
@@ -40,6 +45,13 @@ struct PendingReading
 };
 
 PendingReading pendingReading;
+// Protege pendingReading: onPzemReading() la escribe desde la tarea propia
+// de MycilaPZEM (pzem.begin(..., /*async=*/true) — ver code.ino), mientras
+// que sendPendingTelemetry() la lee desde el loop() principal, en otro
+// hilo. Sin esta seccion critica, una lectura nueva podria empezar a
+// escribirse a mitad de que el loop principal arma el JSON, mezclando
+// campos de dos lecturas distintas en una misma telemetria reportada.
+portMUX_TYPE pendingReadingMux = portMUX_INITIALIZER_UNLOCKED;
 
 String authorizationHeader()
 {
@@ -83,8 +95,10 @@ bool startRequest(HTTPClient& http, const String& path)
     {
         Serial.print("ERROR red: no se pudo iniciar el request a ");
         Serial.println(url);
+        return false;
     }
-    return began;
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    return true;
 }
 
 void applyCommand(JsonObjectConst command)
@@ -149,8 +163,45 @@ void sendHeartbeat()
     http.end();
 }
 
+void syncMaxCurrentThreshold(JsonDocument& responseDoc)
+{
+    // El backend manda el umbral vigente del perfil en cada respuesta de
+    // telemetria — se persiste en NVS (no solo en RAM) para que el corte
+    // critico LOCAL (evaluateLocalCriticalCutoff, sin depender de red)
+    // siga usando el valor real incluso si el servidor o el WiFi caen
+    // despues: la autonomia del corte depende de que este dato ya haya
+    // llegado a la flash del dispositivo en algun momento anterior, no de
+    // una consulta en vivo al backend. Solo escribe en NVS si el valor
+    // realmente cambio, para no desgastar la flash en cada ciclo.
+    if (responseDoc["max_current_a"].isNull())
+    {
+        return;
+    }
+    float newThreshold = responseDoc["max_current_a"].as<float>();
+    if (newThreshold > 0.0f && newThreshold != getLocalMaxCurrentA())
+    {
+        saveLocalMaxCurrentA(newThreshold);
+        Serial.print("Umbral de corte local actualizado desde el perfil: ");
+        Serial.print(newThreshold);
+        Serial.println(" A");
+    }
+}
+
 void sendPendingTelemetry()
 {
+    // Copia atomica y corta bajo seccion critica: onPzemReading() puede
+    // escribir una lectura nueva en pendingReading en cualquier momento
+    // desde la tarea de MycilaPZEM, y armar el JSON de abajo tarda lo
+    // suficiente (con HTTP incluido, no) como para que una lectura nueva
+    // empiece a pisar la que se esta reportando — de ahi que la copia se
+    // haga primero y todo lo demas trabaje sobre la copia local, nunca
+    // sobre pendingReading directamente.
+    PendingReading reading;
+    portENTER_CRITICAL(&pendingReadingMux);
+    reading = pendingReading;
+    pendingReading.pending = false;
+    portEXIT_CRITICAL(&pendingReadingMux);
+
     localSequence++;
 
     HTTPClient http;
@@ -166,13 +217,13 @@ void sendPendingTelemetry()
     // Pydantic acepta un epoch Unix directamente; si el NTP todavia no
     // sincronizo, se manda igual (best-effort) para no perder la lectura.
     body["timestamp"] = (uint32_t)time(nullptr);
-    body["voltage_v"] = pendingReading.voltage;
-    body["current_a"] = pendingReading.current;
-    body["power_w"] = pendingReading.activePower;
+    body["voltage_v"] = reading.voltage;
+    body["current_a"] = reading.current;
+    body["power_w"] = reading.activePower;
     // El PZEM reporta energia en Wh; el contrato de telemetria usa kWh.
-    body["energy_kwh"] = pendingReading.activeEnergyWh / 1000.0f;
-    body["frequency_hz"] = pendingReading.frequency;
-    body["power_factor"] = pendingReading.powerFactor;
+    body["energy_kwh"] = reading.activeEnergyWh / 1000.0f;
+    body["frequency_hz"] = reading.frequency;
+    body["power_factor"] = reading.powerFactor;
     body["relay_state"] = relayState ? "ON" : "OFF";
 
     String serialized;
@@ -182,14 +233,17 @@ void sendPendingTelemetry()
     if (statusCode == 200)
     {
         JsonDocument responseDoc;
-        if (!deserializeJson(responseDoc, http.getString()) && !responseDoc["command"].isNull())
+        if (!deserializeJson(responseDoc, http.getString()))
         {
-            applyCommand(responseDoc["command"].as<JsonObjectConst>());
+            if (!responseDoc["command"].isNull())
+            {
+                applyCommand(responseDoc["command"].as<JsonObjectConst>());
+            }
+            syncMaxCurrentThreshold(responseDoc);
         }
     }
     http.end();
 
-    pendingReading.pending = false;
     lastHeartbeatOrTelemetryAt = millis();
 }
 
@@ -198,6 +252,11 @@ void sendPendingTelemetry()
 void iotClientBegin()
 {
     localSequence = 0;
+}
+
+void applyPushedCommand(JsonObjectConst command)
+{
+    applyCommand(command);
 }
 
 void iotClientLoop()
@@ -240,9 +299,14 @@ void onPzemReading(float voltage, float current, float activePower,
         Serial.println("CORTE CRITICO LOCAL aplicado (independiente del backend).");
     }
 
-    // 2. Guardar la lectura (incluye el estado del rele YA actualizado por
+    // 2. Guarda la lectura (incluye el estado del rele YA actualizado por
     // el corte local, si aplico) para que iotClientLoop() la reporte en el
     // siguiente ciclo — nunca se hace la llamada HTTP desde este callback.
+    // Bajo seccion critica: este callback corre en la tarea propia de
+    // MycilaPZEM (async), mientras iotClientLoop() lee esta misma
+    // estructura desde el loop() principal — ver declaracion de
+    // pendingReadingMux mas arriba.
+    portENTER_CRITICAL(&pendingReadingMux);
     pendingReading.voltage = voltage;
     pendingReading.current = current;
     pendingReading.activePower = activePower;
@@ -250,4 +314,5 @@ void onPzemReading(float voltage, float current, float activePower,
     pendingReading.powerFactor = powerFactor;
     pendingReading.activeEnergyWh = activeEnergyWh;
     pendingReading.pending = true;
+    portEXIT_CRITICAL(&pendingReadingMux);
 }

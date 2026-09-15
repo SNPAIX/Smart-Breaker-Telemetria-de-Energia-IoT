@@ -1,6 +1,106 @@
+import { isAxiosError } from "axios";
 import { useState, type FormEvent } from "react";
 
-import { useAdminUsers, useCreateAdminUser } from "../../api/hooks";
+import {
+  useAdminUsers,
+  useCreateAdminUser,
+  useDeleteAdminUser,
+  useUpdateAdminUser,
+} from "../../api/hooks";
+import type { AdminUser } from "../../api/types";
+
+function extractErrorDetail(error: unknown, fallback: string): string {
+  if (isAxiosError(error) && typeof error.response?.data?.detail === "string") {
+    return error.response.data.detail;
+  }
+  return fallback;
+}
+
+function UserRow({ user }: { user: AdminUser }) {
+  const updateUser = useUpdateAdminUser();
+  const deleteUser = useDeleteAdminUser();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [rowError, setRowError] = useState<string | null>(null);
+
+  const handleRoleChange = async (role: string) => {
+    setRowError(null);
+    try {
+      await updateUser.mutateAsync({ userId: user.id, role });
+    } catch (error) {
+      setRowError(extractErrorDetail(error, "No se pudo actualizar el rol."));
+    }
+  };
+
+  const handleToggleActive = async () => {
+    setRowError(null);
+    try {
+      await updateUser.mutateAsync({ userId: user.id, is_active: !user.is_active });
+    } catch (error) {
+      setRowError(extractErrorDetail(error, "No se pudo actualizar el estado."));
+    }
+  };
+
+  const handleDelete = async () => {
+    setRowError(null);
+    try {
+      await deleteUser.mutateAsync(user.id);
+    } catch (error) {
+      setRowError(extractErrorDetail(error, "No se pudo eliminar el usuario."));
+      setConfirmingDelete(false);
+    }
+  };
+
+  return (
+    <tr>
+      <td>{user.id}</td>
+      <td>{user.email}</td>
+      <td>
+        <select
+          value={user.role}
+          onChange={(e) => handleRoleChange(e.target.value)}
+          disabled={updateUser.isPending}
+        >
+          <option value="user">user</option>
+          <option value="admin">admin</option>
+        </select>
+      </td>
+      <td>
+        <button
+          type="button"
+          className={user.is_active ? "icon-btn" : "icon-btn danger"}
+          onClick={handleToggleActive}
+          disabled={updateUser.isPending}
+          title={user.is_active ? "Desactivar" : "Activar"}
+        >
+          {user.is_active ? "✓" : "✕"}
+        </button>
+      </td>
+      <td>
+        {confirmingDelete ? (
+          <span className="confirm-inline">
+            ¿Eliminar?
+            <button type="button" className="icon-btn danger" onClick={handleDelete}>
+              Sí
+            </button>
+            <button type="button" className="icon-btn" onClick={() => setConfirmingDelete(false)}>
+              No
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="icon-btn danger"
+            title="Eliminar usuario"
+            onClick={() => setConfirmingDelete(true)}
+          >
+            🗑
+          </button>
+        )}
+        {rowError && <p className="error site-card-error">{rowError}</p>}
+      </td>
+    </tr>
+  );
+}
 
 export function AdminUsersPage() {
   const { data: users, isLoading, isError } = useAdminUsers();
@@ -19,8 +119,8 @@ export function AdminUsersPage() {
       setEmail("");
       setPassword("");
       setRole("user");
-    } catch {
-      setFormError("No se pudo crear el usuario (¿el correo ya existe?).");
+    } catch (error) {
+      setFormError(extractErrorDetail(error, "No se pudo crear el usuario (¿el correo ya existe?)."));
     }
   };
 
@@ -28,7 +128,7 @@ export function AdminUsersPage() {
     <div>
       <h1>Usuarios</h1>
 
-      <form className="inline-form" onSubmit={handleSubmit}>
+      <form className="glass-card inline-form" onSubmit={handleSubmit}>
         <input
           type="email"
           placeholder="correo@ejemplo.com"
@@ -48,7 +148,7 @@ export function AdminUsersPage() {
           <option value="user">user</option>
           <option value="admin">admin</option>
         </select>
-        <button type="submit" disabled={createUser.isPending}>
+        <button type="submit" className="btn-primary" disabled={createUser.isPending}>
           Crear usuario
         </button>
       </form>
@@ -64,16 +164,12 @@ export function AdminUsersPage() {
             <th>Correo</th>
             <th>Rol</th>
             <th>Activo</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           {users?.map((user) => (
-            <tr key={user.id}>
-              <td>{user.id}</td>
-              <td>{user.email}</td>
-              <td>{user.role}</td>
-              <td>{user.is_active ? "sí" : "no"}</td>
-            </tr>
+            <UserRow key={user.id} user={user} />
           ))}
         </tbody>
       </table>

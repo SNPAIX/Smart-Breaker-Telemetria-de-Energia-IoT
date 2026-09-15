@@ -122,8 +122,67 @@ class ClaimIn(BaseModel):
     site_id: int
 
 
+class SiteCreateIn(BaseModel):
+    """Alta de sitio por el propio usuario final (a diferencia de
+    `admin_api.SiteCreateIn`, acá quien crea el sitio queda automáticamente
+    como su primer miembro con rol "owner" — ver `create_my_site`)."""
+
+    name: str
+    kind: str = "otro"
+
+
+class DeviceSelfCreateIn(BaseModel):
+    """Alta de dispositivo por un usuario final dentro de un sitio propio.
+
+    A diferencia de `admin_api.DeviceCreateIn`, acá no se pide `profile_id`
+    — el usuario final no debería tener que entender qué es un
+    `DeviceProfile` primero; el endpoint crea uno propio para el
+    dispositivo con el umbral que el usuario indique (o el default)."""
+
+    public_id: str
+    name: str
+    max_current_a: float = 15.0
+
+
 class DeviceStateOut(BaseModel):
     device_id: int
     desired_state: str
     actual_state: str
     is_locked_out: bool
+
+
+class ConsumptionPointOut(BaseModel):
+    period: str = Field(
+        description='"YYYY-MM-DD" si granularity="day", "YYYY-MM" si "month", '
+        '"YYYY-MM-DDTHH" si "hour".'
+    )
+    kwh: float
+
+
+class DeviceConsumptionOut(BaseModel):
+    device_id: int
+    granularity: Literal["hour", "day", "month"]
+    points: list[ConsumptionPointOut]
+    earliest_date: str | None = Field(
+        default=None,
+        description='"YYYY-MM-DD" de la lectura más antigua del dispositivo — límite '
+        "inferior real para un rango personalizado, null si nunca reportó telemetría.",
+    )
+
+
+class VoiceQueryIn(BaseModel):
+    """Texto ya transcrito por STT en el celular — este endpoint nunca
+    recibe audio, solo texto (etapa 14)."""
+
+    text: str = Field(min_length=1, max_length=500)
+
+
+class VoiceQueryOut(BaseModel):
+    """`spoken_text` es lo único que el celular necesita pasarle a su TTS
+    nativo — siempre construido a partir del resultado real de la acción o
+    consulta, nunca un texto genérico (ver IA-Assistant/ia_assistant/responder.py)."""
+
+    spoken_text: str
+    action_taken: bool
+    intent_type: str
+    device_id: int | None = None

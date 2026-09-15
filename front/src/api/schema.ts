@@ -439,11 +439,48 @@ export interface paths {
         /** Get My Sites */
         get: operations["get_my_sites_api_v1_app_sites_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create My Site
+         * @description Alta de sitio por el usuario final — a diferencia de
+         *     `POST /api/v1/admin/sites`, acá quien lo crea queda automáticamente
+         *     como su primer miembro (rol "owner"), porque no hay un admin del otro
+         *     lado que lo agregue después.
+         */
+        post: operations["create_my_site_api_v1_app_sites_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/app/sites/{site_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete My Site
+         * @description Solo el dueño del sitio puede eliminarlo — un miembro común
+         *     (agregado por el dueño o vinculado a un dispositivo compartido) no
+         *     debería poder borrar el sitio de otra persona. Reutiliza
+         *     `delete_site` (etapa 7), que ya rechaza el borrado si el sitio
+         *     todavía tiene dispositivos asignados.
+         */
+        delete: operations["delete_my_site_api_v1_app_sites__site_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename My Site
+         * @description Cualquier miembro del sitio puede renombrarlo (a diferencia de
+         *     borrar, que es solo del dueño) — cambiar el nombre no tiene el mismo
+         *     riesgo que perder el sitio entero.
+         */
+        patch: operations["rename_my_site_api_v1_app_sites__site_id__patch"];
         trace?: never;
     };
     "/api/v1/app/sites/{site_id}/devices": {
@@ -456,7 +493,18 @@ export interface paths {
         /** Get Site Devices */
         get: operations["get_site_devices_api_v1_app_sites__site_id__devices_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create My Device
+         * @description Alta de dispositivo por el usuario final dentro de un sitio propio.
+         *
+         *     Crea un `DeviceProfile` propio para el dispositivo (el usuario final no
+         *     tiene por qué manejar perfiles como concepto aparte) y devuelve el
+         *     `public_id`/`secret` que hay que cargar en el dispositivo físico vía el
+         *     portal cautivo de aprovisionamiento (etapa 12) — el mismo flujo que ya
+         *     usa el admin, solo que ahora también lo puede iniciar el usuario dueño
+         *     del sitio.
+         */
+        post: operations["create_my_device_api_v1_app_sites__site_id__devices_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -571,6 +619,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/app/devices/{device_id}/consumption": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Device Consumption
+         * @description Vista para graficar consumo real por rango de tiempo seleccionable
+         *     — misma fuente de verdad que `/cost` (`compute_daily_consumption`),
+         *     solo agregada distinto. `granularity=month` tiene sentido con `days`
+         *     grande (ej. 365); con `days` chico simplemente da uno o dos puntos.
+         *
+         *     `start`/`end` (formato "YYYY-MM-DD") arman un rango personalizado en
+         *     vez de `days` — para el selector de fecha, `earliest_date` en la
+         *     respuesta es el límite inferior real (la primera lectura que existe).
+         *
+         *     `granularity="hour"` es la vista "hoy, trazado a lo largo del día" —
+         *     ignora `days`/`start`/`end` y siempre usa el día calendario UTC actual
+         *     (ver `compute_hourly_consumption`).
+         */
+        get: operations["get_device_consumption_api_v1_app_devices__device_id__consumption_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/app/devices/{device_id}/prediction": {
         parameters: {
             query?: never;
@@ -654,6 +733,23 @@ export interface paths {
         head?: never;
         /** Set Notification Preference */
         patch: operations["set_notification_preference_api_v1_app_notifications_preferences_patch"];
+        trace?: never;
+    };
+    "/api/v1/app/voice/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Voice Query */
+        post: operations["voice_query_api_v1_app_voice_query_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/health": {
@@ -774,6 +870,33 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** ConsumptionPointOut */
+        ConsumptionPointOut: {
+            /**
+             * Period
+             * @description "YYYY-MM-DD" si granularity="day", "YYYY-MM" si "month", "YYYY-MM-DDTHH" si "hour".
+             */
+            period: string;
+            /** Kwh */
+            kwh: number;
+        };
+        /** DeviceConsumptionOut */
+        DeviceConsumptionOut: {
+            /** Device Id */
+            device_id: number;
+            /**
+             * Granularity
+             * @enum {string}
+             */
+            granularity: "hour" | "day" | "month";
+            /** Points */
+            points: components["schemas"]["ConsumptionPointOut"][];
+            /**
+             * Earliest Date
+             * @description "YYYY-MM-DD" de la lectura más antigua del dispositivo — límite inferior real para un rango personalizado, null si nunca reportó telemetría.
+             */
+            earliest_date?: string | null;
+        };
         /**
          * DeviceCostOut
          * @description Costo real del período analizado (no una proyección) — cada día se
@@ -892,6 +1015,26 @@ export interface components {
         DeviceReassignIn: {
             /** Site Id */
             site_id: number | null;
+        };
+        /**
+         * DeviceSelfCreateIn
+         * @description Alta de dispositivo por un usuario final dentro de un sitio propio.
+         *
+         *     A diferencia de `admin_api.DeviceCreateIn`, acá no se pide `profile_id`
+         *     — el usuario final no debería tener que entender qué es un
+         *     `DeviceProfile` primero; el endpoint crea uno propio para el
+         *     dispositivo con el umbral que el usuario indique (o el default).
+         */
+        DeviceSelfCreateIn: {
+            /** Public Id */
+            public_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Max Current A
+             * @default 15
+             */
+            max_current_a: number;
         };
         /** DeviceUpdateIn */
         DeviceUpdateIn: {
@@ -1033,16 +1176,6 @@ export interface components {
             max_voltage_v?: number | null;
             /** Auto Cutoff Enabled */
             auto_cutoff_enabled?: boolean | null;
-        };
-        /** SiteCreateIn */
-        SiteCreateIn: {
-            /** Name */
-            name: string;
-            /**
-             * Kind
-             * @default otro
-             */
-            kind: string;
         };
         /** SiteMemberIn */
         SiteMemberIn: {
@@ -1263,6 +1396,41 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /**
+         * VoiceQueryIn
+         * @description Texto ya transcrito por STT en el celular — este endpoint nunca
+         *     recibe audio, solo texto (etapa 14).
+         */
+        VoiceQueryIn: {
+            /** Text */
+            text: string;
+        };
+        /**
+         * VoiceQueryOut
+         * @description `spoken_text` es lo único que el celular necesita pasarle a su TTS
+         *     nativo — siempre construido a partir del resultado real de la acción o
+         *     consulta, nunca un texto genérico (ver IA-Assistant/ia_assistant/responder.py).
+         */
+        VoiceQueryOut: {
+            /** Spoken Text */
+            spoken_text: string;
+            /** Action Taken */
+            action_taken: boolean;
+            /** Intent Type */
+            intent_type: string;
+            /** Device Id */
+            device_id?: number | null;
+        };
+        /** SiteCreateIn */
+        app__schemas__admin_api__SiteCreateIn: {
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @default otro
+             */
+            kind: string;
+        };
         /** UserOut */
         app__schemas__admin_api__UserOut: {
             /** Id */
@@ -1284,6 +1452,21 @@ export interface components {
             actual_state: string;
             /** Is Locked Out */
             is_locked_out: boolean;
+        };
+        /**
+         * SiteCreateIn
+         * @description Alta de sitio por el propio usuario final (a diferencia de
+         *     `admin_api.SiteCreateIn`, acá quien crea el sitio queda automáticamente
+         *     como su primer miembro con rol "owner" — ver `create_my_site`).
+         */
+        app__schemas__app_api__SiteCreateIn: {
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @default otro
+             */
+            kind: string;
         };
         /** UserOut */
         app__schemas__auth__UserOut: {
@@ -1698,7 +1881,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SiteCreateIn"];
+                "application/json": components["schemas"]["app__schemas__admin_api__SiteCreateIn"];
             };
         };
         responses: {
@@ -2486,6 +2669,103 @@ export interface operations {
             };
         };
     };
+    create_my_site_api_v1_app_sites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["app__schemas__app_api__SiteCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_my_site_api_v1_app_sites__site_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_my_site_api_v1_app_sites__site_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SiteUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_site_devices_api_v1_app_sites__site_id__devices_get: {
         parameters: {
             query?: never;
@@ -2504,6 +2784,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeviceOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_my_device_api_v1_app_sites__site_id__devices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceSelfCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceCreateOut"];
                 };
             };
             /** @description Validation Error */
@@ -2709,6 +3024,42 @@ export interface operations {
             };
         };
     };
+    get_device_consumption_api_v1_app_devices__device_id__consumption_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                granularity?: string;
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: never;
+            path: {
+                device_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceConsumptionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_device_prediction_api_v1_app_devices__device_id__prediction_get: {
         parameters: {
             query?: never;
@@ -2846,6 +3197,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationPreferenceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    voice_query_api_v1_app_voice_query_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoiceQueryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceQueryOut"];
                 };
             };
             /** @description Validation Error */

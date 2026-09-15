@@ -602,6 +602,14 @@ export interface paths {
          *     — misma fuente de verdad que `/cost` (`compute_daily_consumption`),
          *     solo agregada distinto. `granularity=month` tiene sentido con `days`
          *     grande (ej. 365); con `days` chico simplemente da uno o dos puntos.
+         *
+         *     `start`/`end` (formato "YYYY-MM-DD") arman un rango personalizado en
+         *     vez de `days` — para el selector de fecha, `earliest_date` en la
+         *     respuesta es el límite inferior real (la primera lectura que existe).
+         *
+         *     `granularity="hour"` es la vista "hoy, trazado a lo largo del día" —
+         *     ignora `days`/`start`/`end` y siempre usa el día calendario UTC actual
+         *     (ver `compute_hourly_consumption`).
          */
         get: operations["get_device_consumption_api_v1_app_devices__device_id__consumption_get"];
         put?: never;
@@ -836,7 +844,7 @@ export interface components {
         ConsumptionPointOut: {
             /**
              * Period
-             * @description "YYYY-MM-DD" si granularity="day", "YYYY-MM" si "month".
+             * @description "YYYY-MM-DD" si granularity="day", "YYYY-MM" si "month", "YYYY-MM-DDTHH" si "hour".
              */
             period: string;
             /** Kwh */
@@ -850,9 +858,14 @@ export interface components {
              * Granularity
              * @enum {string}
              */
-            granularity: "day" | "month";
+            granularity: "hour" | "day" | "month";
             /** Points */
             points: components["schemas"]["ConsumptionPointOut"][];
+            /**
+             * Earliest Date
+             * @description "YYYY-MM-DD" de la lectura más antigua del dispositivo — límite inferior real para un rango personalizado, null si nunca reportó telemetría.
+             */
+            earliest_date?: string | null;
         };
         /**
          * DeviceCostOut
@@ -2922,6 +2935,8 @@ export interface operations {
             query?: {
                 days?: number;
                 granularity?: string;
+                start?: string | null;
+                end?: string | null;
             };
             header?: never;
             path: {

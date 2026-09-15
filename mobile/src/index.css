@@ -112,6 +112,23 @@ h2 {
   box-shadow: 0 4px 20px -6px rgba(23, 16, 41, 0.5);
 }
 
+.back-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: white;
+  width: 2.1rem;
+  height: 2.1rem;
+  min-width: 2.1rem;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  line-height: 1;
+  margin-right: -0.3rem;
+}
+
 .brand {
   display: inline-flex;
   align-items: center;
@@ -242,12 +259,176 @@ h2 {
 }
 
 .card {
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 1.4rem;
   margin-bottom: 1rem;
   box-shadow: var(--shadow-card);
+}
+
+/* --- Sitios: tarjeta con renombrar/borrar inline --- */
+
+.site-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+ul.site-list li.site-card {
+  --glow: var(--brand);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  border-bottom: none !important;
+  padding: 1rem 1.2rem;
+}
+
+.site-card::before {
+  content: "";
+  position: absolute;
+  top: -3rem;
+  right: -3rem;
+  width: 7rem;
+  height: 7rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--glow) 0%, transparent 62%);
+  opacity: 0.18;
+  filter: blur(18px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.site-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.site-card a.site-card-link {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.6rem;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 400;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.site-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--glow) 16%, white);
+  color: var(--glow);
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.site-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.site-card-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.site-card-status {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--glow);
+}
+
+.site-card-link .tag {
+  margin-left: 12px;
+  align-self: flex-start;
+}
+
+.site-card-rename {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.site-card-rename input {
+  flex: 1;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--brand);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.site-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  
+}
+
+.site-card-error {
+  width: 100%;
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+}
+
+.icon-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  width: 2.1rem;
+  height: 2.1rem;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.icon-btn.danger {
+  color: var(--danger);
+}
+
+.confirm-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.confirm-inline .icon-btn {
+  width: auto;
+  height: auto;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
 }
 
 .chart-header {
@@ -265,6 +446,13 @@ h2 {
   background: var(--surface-2);
   border-radius: 999px;
   padding: 0.2rem;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chart-range-toggle::-webkit-scrollbar {
+  display: none;
 }
 
 .chart-range-btn {
@@ -275,6 +463,8 @@ h2 {
   font-size: 0.8rem;
   cursor: pointer;
   color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .chart-range-btn.active {
@@ -282,6 +472,36 @@ h2 {
   color: var(--text);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   font-weight: 600;
+}
+
+.chart-custom-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.chart-custom-range label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.chart-custom-range input[type="date"] {
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius, 6px);
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.chart-hint {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-top: 0.4rem;
 }
 
 .card label {
@@ -468,11 +688,58 @@ button:disabled {
   font-size: 1.5rem;
   box-shadow: var(--shadow-fab);
   z-index: 45;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* "Orbe de vidrio líquido": una capa de brillo giratoria + un resalte
+   especular fijo arriba a la izquierda, para que el botón lea como una
+   esfera de vidrio en vez de un círculo plano — inspirado en efectos de
+   liquid-glass (orb), no una textura importada. */
+.voice-fab::before {
+  content: "";
+  position: absolute;
+  inset: -30%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 255, 255, 0.35),
+    transparent 30%,
+    transparent 70%,
+    rgba(255, 255, 255, 0.25)
+  );
+  animation: voice-orb-spin 6s linear infinite;
+  z-index: -1;
+}
+
+.voice-fab::after {
+  content: "";
+  position: absolute;
+  top: 10%;
+  left: 18%;
+  width: 34%;
+  height: 22%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.55), transparent 70%);
+  filter: blur(1px);
+}
+
+@keyframes voice-orb-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .voice-fab.listening {
   background: linear-gradient(145deg, #f0405c 0%, var(--danger) 100%);
   animation: voice-pulse 1.2s infinite;
+}
+
+.voice-fab.thinking {
+  animation: voice-breathe 1.4s ease-in-out infinite;
+}
+
+.voice-fab.speaking {
+  animation: voice-pulse-soft 0.9s ease-in-out infinite;
 }
 
 @keyframes voice-pulse {
@@ -484,6 +751,26 @@ button:disabled {
   }
   100% {
     box-shadow: 0 0 0 0 rgba(224, 48, 74, 0);
+  }
+}
+
+@keyframes voice-pulse-soft {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(109, 40, 217, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(109, 40, 217, 0);
+  }
+}
+
+@keyframes voice-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.92);
   }
 }
 

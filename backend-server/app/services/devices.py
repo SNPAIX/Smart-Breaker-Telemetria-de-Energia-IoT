@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
+from typing import Callable
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -17,6 +18,7 @@ from app.models.entities import (
     Device,
     DeviceProfile,
     Event,
+    SiteMember,
     TelemetryReading,
     User,
 )
@@ -50,53 +52,184 @@ def list_device_events(db: Session, device_id: int, limit: int = 100) -> list[Ev
     return list_events(db, device_id=device_id, limit=limit)
 
 
+def _compute_bucketed_consumption(
+    readings: list[TelemetryReading], bucket_key: Callable[[TelemetryReading], str]
+) -> list[tuple[str, float]]:
+    """Agrupa lecturas ya filtradas por rango con `bucket_key` (día u hora)
+    y calcula el consumo real (Wh) de cada bucket — usada tanto por
+    `compute_daily_consumption` como por `compute_hourly_consumption`, para
+    no duplicar la regla "el primer bucket se estima con su propio rango,
+    el resto por diferencia contra el máximo del bucket anterior" (ver
+    docstring de `compute_daily_consumption`)."""
+    buckets: dict[str, list[TelemetryReading]] = defaultdict(list)
+    for reading in readings:
+        buckets[bucket_key(reading)].append(reading)
+
+    sorted_keys = sorted(buckets)
+    if not sorted_keys:
+        return []
+
+    max_kwh = [max(r.energy for r in buckets[key]) for key in sorted_keys]
+    first_min_kwh = min(r.energy for r in buckets[sorted_keys[0]])
+
+    first_wh = max(0.0, (max_kwh[0] - first_min_kwh) * 1000.0)
+    rest_wh = [max(0.0, (current - previous) * 1000.0) for previous, current in pairwise(max_kwh)]
+    bucket_wh = [first_wh, *rest_wh]
+
+    return list(zip(sorted_keys, bucket_wh, strict=True))
+
+
 def compute_daily_consumption(
-    db: Session, device_id: int, days: int = 14
+    db: Session,
+    device_id: int,
+    days: int = 14,
+    *,
+    start: datetime | None = None,
+    end: datetime | None = None,
 ) -> tuple[int, list[tuple[str, float]]]:
     """Devuelve (lecturas_analizadas, [(fecha_iso, consumo_Wh), ...]).
 
     `energy` es la lectura acumulada del medidor en kWh (nunca se resetea
-    sola), no el consumo del día — el consumo real es la diferencia entre
-    el máximo acumulado de un día y el del día anterior. El primer día del
-    rango se descarta por no tener línea base previa. Misma lógica que
-    usaba `app/api/admin/devices_intelligence.py` en el repo base (ver
-    ADR 0009) — se reutiliza tal cual, solo cambia de dónde se llama.
+    sola), no el consumo del día. Para el segundo día en adelante, el
+    consumo real es la diferencia entre el máximo acumulado de ese día y
+    el del día anterior (línea base real). El *primer* día del rango no
+    tiene un día anterior con el que diferenciar — en vez de descartarlo
+    (como hacía esta función hasta el 15-sep), se estima con el propio
+    rango de sus lecturas (máximo menos mínimo de ESE día): subestima un
+    poco si hubo consumo antes de la primera lectura del día, pero evita
+    mostrar "sin datos" el primer día real de un dispositivo recién
+    conectado (bug reportado: consumo/costo en 0 con un solo día de
+    telemetría). Misma lógica base que usaba
+    `app/api/admin/devices_intelligence.py` en el repo base (ver ADR 0009).
+
+    `start`/`end` permiten un rango explícito (para el selector de fechas
+    personalizado); si no se dan, se usa `days` hacia atrás desde ahora.
 
     Se conserva la fecha de cada bucket (no solo el valor en Wh) porque la
     etapa 8 necesita saber qué tarifa estaba vigente cada día para
     prorratear el costo cuando el precio cambió a mitad del período.
     """
-    now = datetime.now(UTC)
-    start = now - timedelta(days=days)
+    range_end = end if end is not None else datetime.now(UTC)
+    range_start = start if start is not None else range_end - timedelta(days=days)
     readings = (
         db.query(TelemetryReading)
-        .filter(TelemetryReading.device_id == device_id, TelemetryReading.recorded_at >= start)
+        .filter(
+            TelemetryReading.device_id == device_id,
+            TelemetryReading.recorded_at >= range_start,
+            TelemetryReading.recorded_at <= range_end,
+        )
         .order_by(TelemetryReading.recorded_at.asc())
         .all()
     )
 
-    buckets: dict[str, list[TelemetryReading]] = defaultdict(list)
-    for reading in readings:
-        buckets[reading.recorded_at.strftime("%Y-%m-%d")].append(reading)
-
-    sorted_days = sorted(buckets)
-    daily_energy_kwh = [max(r.energy for r in buckets[day]) for day in sorted_days]
-    daily_wh = [
-        max(0.0, (current - previous) * 1000.0) for previous, current in pairwise(daily_energy_kwh)
-    ]
-    # El primer día se descarta (sin línea base previa), así que las fechas
-    # se alinean a partir del segundo día de `sorted_days`.
-    dated_daily_wh = list(zip(sorted_days[1:], daily_wh, strict=True))
+    dated_daily_wh = _compute_bucketed_consumption(
+        readings, lambda r: r.recorded_at.strftime("%Y-%m-%d")
+    )
     return len(readings), dated_daily_wh
 
 
+def compute_hourly_consumption(
+    db: Session, device_id: int, day: datetime
+) -> list[tuple[str, float]]:
+    """Consumo por hora de UN día calendario (UTC) — la vista "trazado a lo
+    largo del día" pedida explícitamente para la gráfica, en vez de un solo
+    punto por día. Misma regla de estimación que `compute_daily_consumption`,
+    solo que el bucket es la hora en vez del día; como es un único día, no
+    hace falta línea base de un día anterior. Devuelve
+    [("YYYY-MM-DDTHH", kwh), ...] ya ordenado."""
+    day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1, microseconds=-1)
+    readings = (
+        db.query(TelemetryReading)
+        .filter(
+            TelemetryReading.device_id == device_id,
+            TelemetryReading.recorded_at >= day_start,
+            TelemetryReading.recorded_at <= day_end,
+        )
+        .order_by(TelemetryReading.recorded_at.asc())
+        .all()
+    )
+
+    hourly_wh = _compute_bucketed_consumption(
+        readings, lambda r: r.recorded_at.strftime("%Y-%m-%dT%H")
+    )
+    return [(hour, round(wh / 1000.0, 4)) for hour, wh in hourly_wh]
+
+
+# Antes de sincronizar por NTP, el firmware reporta timestamps desde epoch
+# (ver ino/iot_client.cpp: MIN_PLAUSIBLE_EPOCH) — esas lecturas quedan
+# fuera de cualquier ventana de días razonable así que no afectan
+# `compute_daily_consumption`, pero `get_first_telemetry_date` no tiene
+# ventana y las tomaría como si fueran la primera lectura real (bug
+# observado: earliest_date="1970-01-01" en vez de la fecha real).
+MIN_PLAUSIBLE_TELEMETRY_AT = datetime(2020, 1, 1, tzinfo=UTC)
+
+
+def get_first_telemetry_date(db: Session, device_id: int) -> str | None:
+    """Fecha (YYYY-MM-DD) de la lectura más antigua *plausible* del
+    dispositivo — límite inferior real para el selector de rango
+    personalizado del consumo, no tiene sentido dejar elegir una fecha
+    anterior a la primera lectura real."""
+    first = (
+        db.query(TelemetryReading)
+        .filter(
+            TelemetryReading.device_id == device_id,
+            TelemetryReading.recorded_at >= MIN_PLAUSIBLE_TELEMETRY_AT,
+        )
+        .order_by(TelemetryReading.recorded_at.asc())
+        .first()
+    )
+    return first.recorded_at.strftime("%Y-%m-%d") if first is not None else None
+
+
+def get_consumption_series(
+    db: Session,
+    device_id: int,
+    *,
+    days: int,
+    granularity: str,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> list[tuple[str, float]]:
+    """Serie de consumo para graficar (etapa "vista de consumo") —
+    reutiliza `compute_daily_consumption` tal cual (misma fuente de
+    verdad que ya usa el costo real de la etapa 8) y, si se pide
+    granularidad mensual, suma los días de cada mes calendario dentro del
+    período. Devuelve [(periodo, kwh), ...] ya ordenado cronológicamente;
+    `periodo` es "YYYY-MM-DD" para "day" o "YYYY-MM" para "month".
+
+    `start`/`end` (rango personalizado, ver endpoint) tienen prioridad
+    sobre `days` cuando se dan."""
+    _, dated_daily_wh = compute_daily_consumption(db, device_id, days=days, start=start, end=end)
+
+    if granularity == "day":
+        return [(date_str, round(wh / 1000.0, 3)) for date_str, wh in dated_daily_wh]
+
+    monthly_wh: dict[str, float] = defaultdict(float)
+    for date_str, wh in dated_daily_wh:
+        monthly_wh[date_str[:7]] += wh
+    return [(month, round(wh / 1000.0, 3)) for month, wh in sorted(monthly_wh.items())]
+
+
 def compute_daily_consumption_wh(
-    db: Session, device_id: int, days: int = 14
+    db: Session, device_id: int, days: int = 14, *, drop_partial_first_day: bool = False
 ) -> tuple[int, list[float]]:
     """Igual que `compute_daily_consumption`, pero sin las fechas — lo que
-    necesita la etapa 9 (tendencia) para no acoplarse a Tariff."""
+    necesita la etapa 9 (tendencia) para no acoplarse a Tariff.
+
+    `drop_partial_first_day=True` descarta el primer día del rango — la
+    regresión lineal de la proyección (`app/services/predictions.py`) es
+    sensible a un primer punto que representa un día parcial (su consumo
+    real puede ser mayor al observado si hubo actividad antes de la
+    primera lectura), y un salto artificial ahí distorsiona la pendiente
+    calculada mucho más de lo que aporta incluirlo. `/cost` y
+    `/consumption` sí lo incluyen (ver `compute_daily_consumption`) porque
+    ahí un total aproximado es mejor que "sin datos"."""
     count, dated = compute_daily_consumption(db, device_id, days=days)
-    return count, [wh for _, wh in dated]
+    wh_values = [wh for _, wh in dated]
+    if drop_partial_first_day and len(wh_values) > 1:
+        wh_values = wh_values[1:]
+    return count, wh_values
 
 
 def switch_device(db: Session, device: Device, desired_state: str) -> Command:
@@ -157,6 +290,23 @@ def claim_device(db: Session, device: Device, site_id: int) -> Device:
     db.commit()
     db.refresh(device)
     return device
+
+
+def is_user_authorized_for_device(db: Session, user_id: int, device_id: int) -> bool:
+    """Misma regla que `get_authorized_device` (dependencia HTTP en
+    app/core/dependencies.py) pero como función pura que devuelve bool en
+    vez de levantar HTTPException — la necesita también la suscripción a
+    telemetría en vivo por WebSocket (app/api/app/ws.py), que no tiene
+    dónde levantar un 404 HTTP a mitad de una conexión ya abierta."""
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if device is None or device.site_id is None:
+        return False
+    membership = (
+        db.query(SiteMember)
+        .filter(SiteMember.site_id == device.site_id, SiteMember.user_id == user_id)
+        .first()
+    )
+    return membership is not None
 
 
 def is_device_online(device: Device) -> bool:

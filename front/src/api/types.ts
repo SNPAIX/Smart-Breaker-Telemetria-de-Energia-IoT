@@ -13,6 +13,8 @@ export type Telemetry = components["schemas"]["TelemetryOut"];
 export type DeviceEvent = components["schemas"]["EventOut"];
 export type DeviceMetrics = components["schemas"]["DeviceMetricsOut"];
 export type DeviceCost = components["schemas"]["DeviceCostOut"];
+export type DeviceConsumption = components["schemas"]["DeviceConsumptionOut"];
+export type ConsumptionPoint = components["schemas"]["ConsumptionPointOut"];
 export type DevicePrediction = components["schemas"]["DevicePredictionOut"];
 export type NotificationItem = components["schemas"]["NotificationOut"];
 

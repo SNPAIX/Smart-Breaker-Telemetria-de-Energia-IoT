@@ -34,6 +34,12 @@ class TelemetryAck(BaseModel):
     status: Literal["success", "duplicate"] = "success"
     is_out_of_order: bool = False
     command: CommandOut | None = None
+    max_current_a: float | None = Field(
+        default=None,
+        description="Umbral de corte local vigente en el perfil del dispositivo — el firmware "
+        "lo persiste en NVS (ver device_storage.h) para que el corte crítico local (sin red) "
+        "refleje cambios de perfil hechos desde el panel, no solo el valor de fábrica.",
+    )
 
 
 class HeartbeatAck(BaseModel):

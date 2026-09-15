@@ -21,6 +21,20 @@ def list_site_devices(db: Session, site_id: int) -> list[Device]:
     return db.query(Device).filter(Device.site_id == site_id).all()
 
 
+def list_user_devices(db: Session, user_id: int) -> list[Device]:
+    """Todos los dispositivos visibles para un usuario, sin importar en
+    cuál de sus sitios estén — lo usa el asistente de voz (etapa 14) para
+    resolver un comando contra el universo completo de dispositivos del
+    usuario, no solo los de un sitio puntual."""
+    return (
+        db.query(Device)
+        .join(Site, Site.id == Device.site_id)
+        .join(SiteMember, SiteMember.site_id == Site.id)
+        .filter(SiteMember.user_id == user_id)
+        .all()
+    )
+
+
 def create_site(db: Session, *, name: str, kind: str = "otro") -> Site:
     site = Site(name=name, kind=kind)
     db.add(site)

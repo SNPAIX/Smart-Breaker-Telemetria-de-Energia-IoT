@@ -97,8 +97,10 @@ def test_cost_is_prorated_when_tariff_changes_mid_period() -> None:
 
         breakdown = compute_cost_breakdown(db, device, days=14)
 
-        # dia -2: 1 kWh * 2.0 = 2.0 ; dia -1: 2 kWh * 3.0 = 6.0 ; total = 8.0
-        assert breakdown.days_analyzed == 2
+        # dia -3: primer dia del rango, una sola lectura -> sin spread que
+        # estimar, 0 kWh. dia -2: 1 kWh * 2.0 = 2.0 ; dia -1: 2 kWh * 3.0 =
+        # 6.0 ; total = 8.0 (el dia -3 no descartado, pero no suma nada).
+        assert breakdown.days_analyzed == 3
         assert breakdown.total_kwh == 3.0
         assert breakdown.total_cost == 8.0
         assert breakdown.used_default_tariff is False

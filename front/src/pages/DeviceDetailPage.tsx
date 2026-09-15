@@ -1,5 +1,7 @@
 import { useParams } from "react-router-dom";
 
+import { ConsumptionChart } from "../components/ConsumptionChart";
+import { useLiveDeviceTelemetry } from "../realtime/useLiveDeviceTelemetry";
 import {
   useDevice,
   useDeviceCost,
@@ -16,6 +18,7 @@ export function DeviceDetailPage() {
 
   const { data: device, isLoading, isError } = useDevice(numericDeviceId);
   const { data: telemetry } = useDeviceTelemetry(numericDeviceId);
+  useLiveDeviceTelemetry(numericDeviceId);
   const { data: events } = useDeviceEvents(numericDeviceId);
   const { data: cost } = useDeviceCost(numericDeviceId);
   const { data: prediction } = useDevicePrediction(numericDeviceId);
@@ -48,7 +51,10 @@ export function DeviceDetailPage() {
         <h2>Estado</h2>
         <p>Deseado: {device.desired_state}</p>
         <p>Real (confirmado por el dispositivo): {device.actual_state}</p>
-        <p>Último contacto: {device.last_seen_at ?? "nunca"}</p>
+        <p>
+          Último contacto:{" "}
+          {device.last_seen_at ? new Date(device.last_seen_at).toLocaleString() : "nunca"}
+        </p>
         <div className="button-row">
           <button
             onClick={() => switchDevice.mutate("ON")}
@@ -86,19 +92,35 @@ export function DeviceDetailPage() {
         <h2>Costo (período analizado)</h2>
         {cost ? (
           <p>
-            {cost.total_kwh.toFixed(2)} kWh ≈ {cost.total_cost.toFixed(2)} {cost.currency}
+            {cost.total_kwh.toFixed(3)} kWh ≈ {cost.total_cost.toFixed(2)} {cost.currency}
             {cost.used_default_tariff && " (tarifa por defecto, sin Tariff configurada)"}
+            {cost.days_analyzed <= 1 && (
+              <>
+                <br />
+                <span className="chart-hint">
+                  Basado en menos de un día completo de historial — se ajusta solo a medida que
+                  pasan los días.
+                </span>
+              </>
+            )}
           </p>
         ) : (
           <p>Sin datos de costo todavía.</p>
         )}
       </section>
 
+      <ConsumptionChart deviceId={numericDeviceId} />
+
       <section className="card">
         <h2>Predicción mensual</h2>
-        {prediction ? (
+        {prediction && (prediction.projected_kwh > 0 || prediction.projected_cost > 0) ? (
           <p>
             {prediction.projected_kwh.toFixed(2)} kWh proyectados ≈ {prediction.projected_cost.toFixed(2)}
+          </p>
+        ) : prediction ? (
+          <p>
+            Todavía no hay suficiente historial para proyectar (hace falta más de un día completo
+            de consumo).
           </p>
         ) : (
           <p>Sin predicción todavía.</p>

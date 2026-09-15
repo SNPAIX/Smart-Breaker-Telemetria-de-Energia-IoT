@@ -164,6 +164,43 @@ def test_duplicate_sequence_does_not_duplicate_the_reading() -> None:
         _cleanup()
 
 
+def test_sequence_reused_after_reboot_is_not_treated_as_duplicate() -> None:
+    """Bug real encontrado 15-sep: `sequence` es un contador local del
+    firmware que arranca en 0 en cada boot — si el dispositivo se reinicia
+    (ej. pierde USB/energía) y ya había usado ese número horas antes, la
+    deduplicación por sequence sin ventana de tiempo descartaba TODA la
+    telemetría real como "duplicada" hasta que el contador volviera a
+    superar el máximo previo. La ventana de deduplicación (10 min) evita
+    esto: un sequence reusado mucho después de la ventana se acepta como
+    lectura nueva."""
+    from datetime import UTC, datetime, timedelta
+
+    _cleanup()
+    secret = _make_device()
+    sim = DeviceSimulator(client=client, public_id=TEST_PUBLIC_ID, secret=secret)
+    try:
+        old_reading = sim.send_telemetry(
+            sequence=5, timestamp=datetime.now(UTC) - timedelta(hours=2)
+        )
+        assert old_reading.status_code == 200
+        assert old_reading.json()["status"] == "success"
+
+        reused_after_reboot = sim.send_telemetry(sequence=5)
+        assert reused_after_reboot.status_code == 200
+        assert reused_after_reboot.json()["status"] == "success"  # no "duplicate"
+
+        db = SessionLocal()
+        count = (
+            db.query(TelemetryReading)
+            .filter(TelemetryReading.device_id == _device_id(), TelemetryReading.sequence == 5)
+            .count()
+        )
+        db.close()
+        assert count == 2  # ambas se guardaron, son lecturas reales distintas
+    finally:
+        _cleanup()
+
+
 def test_out_of_order_telemetry_is_persisted_and_flagged() -> None:
     _cleanup()
     secret = _make_device()

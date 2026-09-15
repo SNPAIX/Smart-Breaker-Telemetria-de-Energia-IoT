@@ -35,7 +35,7 @@ def get_or_generate_prediction(
     ):
         return latest
 
-    _, daily_wh = compute_daily_consumption_wh(db, device.id)
+    _, daily_wh = compute_daily_consumption_wh(db, device.id, drop_partial_first_day=True)
     result = project_monthly_cost(daily_wh, DEFAULT_TARIFF_MXN_PER_KWH)
 
     prediction = Prediction(

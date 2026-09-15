@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -18,6 +18,7 @@ from app.schemas.iot import (
 from app.services.anomaly_alerts import evaluate_and_record_anomaly
 from app.services.cutoff_rules import evaluate_cutoff
 from app.services.notifications import notify_anomaly_by_id, notify_event_by_id
+from app.services.push import push_telemetry_update
 from app.services.voltage_rules import evaluate_voltage
 
 # Aprovisionamiento (dispositivo sin site_id -> vinculado a una cuenta): el
@@ -105,11 +106,23 @@ def receive_telemetry(
     db: Session = Depends(get_db),
 ) -> TelemetryAck:
     received_at = datetime.now(UTC)
+
+    # La ventana acota la deduplicacion a reintentos genuinos (mismo
+    # sequence reenviado segundos despues por un timeout de red) sin
+    # comparar contra TODO el historico: `sequence` es un contador local
+    # del firmware que arranca en 0 en cada boot (`iotClientBegin`), asi
+    # que tras un reinicio del dispositivo (bug real encontrado 15-sep:
+    # el ESP32 perdio USB/energia a mitad de esta sesion) los numeros
+    # bajos vuelven a usarse y chocaban contra filas de horas antes,
+    # descartando como "duplicada" TODA la telemetria real hasta que el
+    # contador volviera a superar el maximo previo — silencioso y largo.
+    DEDUPLICATION_WINDOW = timedelta(minutes=10)
     already_seen = (
         db.query(TelemetryReading)
         .filter(
             TelemetryReading.device_id == device.id,
             TelemetryReading.sequence == payload.sequence,
+            TelemetryReading.recorded_at >= received_at - DEDUPLICATION_WINDOW,
         )
         .first()
     )
@@ -154,6 +167,22 @@ def receive_telemetry(
 
     command, event = evaluate_and_act(device, reading, db, received_at)
 
+    # Si esta lectura no disparó un corte crítico, igual se aprovecha el
+    # viaje para entregar cualquier orden normal ya pendiente (un
+    # encender/apagar pedido por el usuario vía /api/v1/app/.../switch).
+    # Sin esto, un comando así solo llegaba en el próximo poll de
+    # GET /commands/pending — hasta 10s después — aunque la telemetría real
+    # ya viaja casi continua. El corte crítico sigue teniendo prioridad: si
+    # `evaluate_and_act` ya generó uno para esta lectura, es ese el que se
+    # entrega, nunca se pisa.
+    if command is None:
+        command = (
+            db.query(Command)
+            .filter(Command.device_id == device.id, Command.status == "PENDING")
+            .order_by(Command.id.asc())
+            .first()
+        )
+
     # Detección de anomalías (etapa 9): informativa, independiente del
     # motor de reglas de corte — nunca corta la energía por sí sola.
     anomaly_alert = evaluate_and_record_anomaly(db, device, reading)
@@ -165,10 +194,31 @@ def receive_telemetry(
     if anomaly_alert is not None:
         background_tasks.add_task(notify_anomaly_by_id, anomaly_alert.id)
 
+    # Telemetría en vivo (WebSocket, ver app/api/app/ws.py): quien tenga
+    # este dispositivo abierto en pantalla la recibe al instante en vez de
+    # esperar al próximo poll — también en background, mismo motivo que
+    # las notificaciones de arriba.
+    background_tasks.add_task(
+        push_telemetry_update,
+        device.id,
+        {
+            "id": reading.id,
+            "sequence": reading.sequence,
+            "voltage": reading.voltage,
+            "current": reading.current,
+            "power": reading.power,
+            "frequency": reading.frequency,
+            "power_factor": reading.power_factor,
+            "energy": reading.energy,
+            "recorded_at": reading.recorded_at.isoformat(),
+        },
+    )
+
     return TelemetryAck(
         status="success",
         is_out_of_order=is_out_of_order,
         command=CommandOut.model_validate(command) if command else None,
+        max_current_a=device.profile.max_current_a if device.profile else None,
     )
 
 

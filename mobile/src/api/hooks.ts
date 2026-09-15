@@ -33,6 +33,25 @@ export function useCreateMySite() {
   });
 }
 
+export function useRenameMySite() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ siteId, name }: { siteId: number; name: string }) =>
+      (await apiClient.patch<Site>(`/api/v1/app/sites/${siteId}`, { name })).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sites"] }),
+  });
+}
+
+export function useDeleteMySite() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (siteId: number) => {
+      await apiClient.delete(`/api/v1/app/sites/${siteId}`);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sites"] }),
+  });
+}
+
 export function useCreateMyDevice(siteId: number) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -86,25 +105,59 @@ export function useDeviceEvents(deviceId: number | undefined) {
   });
 }
 
+// Costo/predicción no necesitan actualizarse al segundo, pero sí deben
+// reflejar lecturas nuevas sin que el usuario tenga que recargar — antes
+// se pedían una sola vez al montar la página y se quedaban congeladas
+// (bug reportado: "no veo movimiento" en Costo/Predicción mientras el
+// consumo sí se actualizaba).
+const COST_POLL_INTERVAL_MS = 15000;
+
 export function useDeviceCost(deviceId: number | undefined) {
   return useQuery({
     queryKey: ["device-cost", deviceId],
     queryFn: async () => (await apiClient.get<DeviceCost>(`/api/v1/app/devices/${deviceId}/cost`)).data,
     enabled: deviceId !== undefined,
+    refetchInterval: COST_POLL_INTERVAL_MS,
   });
 }
 
+export interface ConsumptionRangeParams {
+  granularity: "hour" | "day" | "month";
+  // Rango preestablecido (últimos N días) o personalizado (start/end,
+  // "YYYY-MM-DD") — se manda uno u otro, nunca los dos (ver ConsumptionChart).
+  days?: number;
+  start?: string;
+  end?: string;
+}
+
+// Consumo/costo no necesitan la frescura de la telemetria/estado (por eso
+// no van por el WebSocket de notificaciones, que es para eventos puntuales,
+// no para un agregado que cambia con cada lectura) pero sí deben reflejar
+// lecturas nuevas sin que el usuario tenga que recargar la pantalla. La
+// vista "hoy, por hora" sí se beneficia de refrescar más seguido — es la
+// que el usuario mira mientras el consumo va llegando en vivo.
+const CONSUMPTION_POLL_INTERVAL_MS = 15000;
+const HOURLY_CONSUMPTION_POLL_INTERVAL_MS = 5000;
+
 export function useDeviceConsumption(
   deviceId: number | undefined,
-  days: number,
-  granularity: "day" | "month",
+  { days, granularity, start, end }: ConsumptionRangeParams,
 ) {
+  const query = new URLSearchParams({ granularity });
+  if (start && end) {
+    query.set("start", start);
+    query.set("end", end);
+  } else {
+    query.set("days", String(days ?? 30));
+  }
   return useQuery({
-    queryKey: ["device-consumption", deviceId, days, granularity],
+    queryKey: ["device-consumption", deviceId, granularity, days, start, end],
+    refetchInterval:
+      granularity === "hour" ? HOURLY_CONSUMPTION_POLL_INTERVAL_MS : CONSUMPTION_POLL_INTERVAL_MS,
     queryFn: async () =>
       (
         await apiClient.get<DeviceConsumption>(
-          `/api/v1/app/devices/${deviceId}/consumption?days=${days}&granularity=${granularity}`,
+          `/api/v1/app/devices/${deviceId}/consumption?${query.toString()}`,
         )
       ).data,
     enabled: deviceId !== undefined,

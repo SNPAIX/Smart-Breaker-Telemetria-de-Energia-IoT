@@ -13,6 +13,13 @@ interface VoiceExchange {
 const UNAVAILABLE_MESSAGE =
   "El asistente de voz no está disponible en este momento. Probá de nuevo más tarde.";
 const NO_PERMISSION_MESSAGE = "Necesito permiso del micrófono para poder escucharte.";
+// Distinto de UNAVAILABLE_MESSAGE a propósito: esto es el reconocedor nativo
+// devolviendo "No match" (no escuchó nada entendible — silencio, ruido,
+// hablaste antes de que empezara a escuchar), no una falla del backend ni
+// de la app. Antes ambos casos mostraban el mismo mensaje de "no
+// disponible", lo que hacía pensar que el servidor estaba caído cuando en
+// realidad el micrófono simplemente no captó nada.
+const NOT_UNDERSTOOD_MESSAGE = "No te escuché bien. Intentá de nuevo.";
 
 export function useVoiceAssistant() {
   const [status, setStatus] = useState<VoiceAssistantStatus>("idle");
@@ -57,13 +64,23 @@ export function useVoiceAssistant() {
       }
 
       setStatus("listening");
-      const transcript = await listenOnce();
+      let transcript: string;
+      try {
+        transcript = await listenOnce();
+      } catch {
+        // Fallo del reconocedor nativo (típicamente "No match": no captó
+        // ninguna palabra) — nunca llegó a tocar el backend, así que no es
+        // un problema de disponibilidad del servicio.
+        setStatus("error");
+        setErrorMessage(NOT_UNDERSTOOD_MESSAGE);
+        await speak(NOT_UNDERSTOOD_MESSAGE);
+        setStatus("idle");
+        return;
+      }
       await processTranscript(transcript);
     } catch {
-      // Cubre tanto un fallo del reconocedor de voz como que el backend
-      // responda 404 (VOICE_ASSISTANT_ENABLED=false en ese despliegue) o un
-      // error de red — en cualquier caso, se avisa por voz en vez de
-      // quedarse en silencio.
+      // Acá sí es el backend: responde 404 (VOICE_ASSISTANT_ENABLED=false en
+      // ese despliegue), un error de red, o el propio TTS falló.
       setStatus("error");
       setErrorMessage(UNAVAILABLE_MESSAGE);
       await speak(UNAVAILABLE_MESSAGE);
