@@ -147,7 +147,11 @@ h2 {
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  background: var(--accent);
+  /* Blanco a propósito: el emoji "⚡" trae su propio color (amarillo/
+     naranja) fijo por ser un glifo a color — `color` de CSS no lo toca.
+     Sobre el fondo amarillo (--accent) que tenía antes, quedaba amarillo
+     sobre amarillo y el ícono se perdía. */
+  background: white;
   color: #171029;
   font-size: 0.95rem;
   flex-shrink: 0;
@@ -253,9 +257,10 @@ h2 {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: var(--brand);
-  color: white;
+  background: white;
+  color: #171029;
   font-size: 1.2rem;
+  box-shadow: 0 1px 3px rgba(23, 16, 41, 0.15);
 }
 
 .card {
@@ -518,6 +523,21 @@ ul.site-list li.site-card {
   padding: 0.55rem 0.7rem;
   margin-top: 0.35rem;
   box-sizing: border-box;
+}
+
+.inline-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.card .inline-checkbox input {
+  display: inline;
+  width: auto;
+  margin-top: 0;
 }
 
 .list {

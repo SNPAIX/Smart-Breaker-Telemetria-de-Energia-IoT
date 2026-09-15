@@ -2,13 +2,13 @@ import { useState, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
+import { notifyError } from "../lib/errors";
 
 export function LoginPage() {
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (isAuthenticated) {
@@ -17,13 +17,12 @@ export function LoginPage() {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    setError(null);
     setIsSubmitting(true);
     try {
       await login(email, password);
       navigate("/sites");
     } catch {
-      setError("Correo o contraseña incorrectos.");
+      notifyError(null, "Correo o contraseña incorrectos.");
     } finally {
       setIsSubmitting(false);
     }
@@ -46,7 +45,6 @@ export function LoginPage() {
             required
           />
         </label>
-        {error && <p className="error">{error}</p>}
         <button type="submit" disabled={isSubmitting}>
           {isSubmitting ? "Ingresando..." : "Ingresar"}
         </button>

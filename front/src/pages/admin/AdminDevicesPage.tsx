@@ -1,4 +1,3 @@
-import { isAxiosError } from "axios";
 import { useState, type FormEvent } from "react";
 
 import {
@@ -13,13 +12,8 @@ import {
   useUpdateAdminProfile,
 } from "../../api/hooks";
 import type { AdminProfile, DeviceCreateOut } from "../../api/types";
-
-function extractErrorDetail(error: unknown, fallback: string): string {
-  if (isAxiosError(error) && typeof error.response?.data?.detail === "string") {
-    return error.response.data.detail;
-  }
-  return fallback;
-}
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { notifyError, notifySuccess } from "../../lib/errors";
 
 function ProfileRow({ profile }: { profile: AdminProfile }) {
   const updateProfile = useUpdateAdminProfile();
@@ -30,11 +24,9 @@ function ProfileRow({ profile }: { profile: AdminProfile }) {
   const [maxVoltageV, setMaxVoltageV] = useState(profile.max_voltage_v?.toString() ?? "");
   const [autoCutoffEnabled, setAutoCutoffEnabled] = useState(profile.auto_cutoff_enabled);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [rowError, setRowError] = useState<string | null>(null);
 
   const handleSave = async (event: FormEvent) => {
     event.preventDefault();
-    setRowError(null);
     try {
       await updateProfile.mutateAsync({
         profileId: profile.id,
@@ -44,18 +36,19 @@ function ProfileRow({ profile }: { profile: AdminProfile }) {
         auto_cutoff_enabled: autoCutoffEnabled,
       });
       setEditing(false);
+      notifySuccess("Perfil actualizado.");
     } catch (error) {
-      setRowError(extractErrorDetail(error, "No se pudo actualizar el perfil."));
+      notifyError(error, "No se pudo actualizar el perfil.");
     }
   };
 
   const handleDelete = async () => {
-    setRowError(null);
     try {
       await deleteProfile.mutateAsync(profile.id);
-    } catch (error) {
-      setRowError(extractErrorDetail(error, "No se pudo eliminar el perfil."));
+      notifySuccess("Perfil eliminado.");
       setConfirmingDelete(false);
+    } catch (error) {
+      notifyError(error, "No se pudo eliminar el perfil.");
     }
   };
 
@@ -109,7 +102,6 @@ function ProfileRow({ profile }: { profile: AdminProfile }) {
                 Cancelar
               </button>
             </div>
-            {rowError && <p className="error">{rowError}</p>}
           </form>
         </td>
       </tr>
@@ -130,28 +122,23 @@ function ProfileRow({ profile }: { profile: AdminProfile }) {
           <button type="button" className="icon-btn" title="Editar" onClick={() => setEditing(true)}>
             ✎
           </button>
-          {confirmingDelete ? (
-            <span className="confirm-inline">
-              ¿Eliminar?
-              <button type="button" className="icon-btn danger" onClick={handleDelete}>
-                Sí
-              </button>
-              <button type="button" className="icon-btn" onClick={() => setConfirmingDelete(false)}>
-                No
-              </button>
-            </span>
-          ) : (
-            <button
-              type="button"
-              className="icon-btn danger"
-              title="Eliminar perfil"
-              onClick={() => setConfirmingDelete(true)}
-            >
-              🗑
-            </button>
-          )}
+          <button
+            type="button"
+            className="icon-btn danger"
+            title="Eliminar perfil"
+            onClick={() => setConfirmingDelete(true)}
+          >
+            🗑
+          </button>
+          <ConfirmDialog
+            open={confirmingDelete}
+            onOpenChange={setConfirmingDelete}
+            title={`¿Eliminar el perfil "${profile.name}"?`}
+            confirmLabel="Eliminar"
+            confirmPending={deleteProfile.isPending}
+            onConfirm={handleDelete}
+          />
         </div>
-        {rowError && <p className="error site-card-error">{rowError}</p>}
       </td>
     </tr>
   );
@@ -166,17 +153,18 @@ export function AdminDevicesPage() {
   const reassignDevice = useReassignAdminDevice();
   const deleteDevice = useDeleteAdminDevice();
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const handleDelete = async (deviceId: number) => {
-    setDeleteError(null);
     try {
       await deleteDevice.mutateAsync(deviceId);
-    } catch (error) {
-      setDeleteError(extractErrorDetail(error, "No se pudo eliminar el dispositivo."));
+      notifySuccess("Dispositivo eliminado.");
       setConfirmingDeleteId(null);
+    } catch (error) {
+      notifyError(error, "No se pudo eliminar el dispositivo.");
     }
   };
+
+  const deviceBeingDeleted = devices?.find((d) => d.id === confirmingDeleteId) ?? null;
 
   const [publicId, setPublicId] = useState("");
   const [deviceName, setDeviceName] = useState("");
@@ -191,35 +179,52 @@ export function AdminDevicesPage() {
 
   const handleCreateDevice = async (event: FormEvent) => {
     event.preventDefault();
-    const created = await createDevice.mutateAsync({
-      public_id: publicId,
-      name: deviceName,
-      profile_id: profileId ? Number(profileId) : undefined,
-    });
-    setLastIssuedSecret(created);
-    setPublicId("");
-    setDeviceName("");
-    setProfileId("");
+    try {
+      const created = await createDevice.mutateAsync({
+        public_id: publicId,
+        name: deviceName,
+        profile_id: profileId ? Number(profileId) : undefined,
+      });
+      setLastIssuedSecret(created);
+      setPublicId("");
+      setDeviceName("");
+      setProfileId("");
+    } catch (error) {
+      notifyError(error, "No se pudo dar de alta el dispositivo (¿ese identificador ya existe?).");
+    }
   };
 
   const handleCreateProfile = async (event: FormEvent) => {
     event.preventDefault();
-    await createProfile.mutateAsync({
-      name: profileName,
-      max_current_a: Number(maxCurrentA),
-      min_voltage_v: minVoltageV ? Number(minVoltageV) : undefined,
-      max_voltage_v: maxVoltageV ? Number(maxVoltageV) : undefined,
-      auto_cutoff_enabled: autoCutoffEnabled,
-    });
-    setProfileName("");
-    setMaxCurrentA("15");
-    setMinVoltageV("");
-    setMaxVoltageV("");
-    setAutoCutoffEnabled(true);
+    try {
+      await createProfile.mutateAsync({
+        name: profileName,
+        max_current_a: Number(maxCurrentA),
+        min_voltage_v: minVoltageV ? Number(minVoltageV) : undefined,
+        max_voltage_v: maxVoltageV ? Number(maxVoltageV) : undefined,
+        auto_cutoff_enabled: autoCutoffEnabled,
+      });
+      setProfileName("");
+      setMaxCurrentA("15");
+      setMinVoltageV("");
+      setMaxVoltageV("");
+      setAutoCutoffEnabled(true);
+      notifySuccess("Perfil creado.");
+    } catch (error) {
+      notifyError(error, "No se pudo crear el perfil.");
+    }
   };
 
-  const handleReassign = (deviceId: number, siteIdValue: string) => {
-    reassignDevice.mutate({ deviceId, siteId: siteIdValue ? Number(siteIdValue) : null });
+  const handleReassign = async (deviceId: number, siteIdValue: string) => {
+    try {
+      await reassignDevice.mutateAsync({
+        deviceId,
+        siteId: siteIdValue ? Number(siteIdValue) : null,
+      });
+      notifySuccess("Dispositivo reasignado.");
+    } catch (error) {
+      notifyError(error, "No se pudo reasignar el dispositivo.");
+    }
   };
 
   return (
@@ -310,7 +315,7 @@ export function AdminDevicesPage() {
             <th>Corriente máx.</th>
             <th>Voltaje (mín/máx)</th>
             <th>Corte automático</th>
-            <th></th>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -332,7 +337,7 @@ export function AdminDevicesPage() {
             <th>Nombre</th>
             <th>Estado</th>
             <th>Sitio</th>
-            <th></th>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -347,7 +352,7 @@ export function AdminDevicesPage() {
               </td>
               <td>
                 <select
-                  defaultValue={device.site_id ?? ""}
+                  value={device.site_id ?? ""}
                   onChange={(e) => handleReassign(device.id, e.target.value)}
                 >
                   <option value="">Sin sitio</option>
@@ -359,32 +364,32 @@ export function AdminDevicesPage() {
                 </select>
               </td>
               <td>
-                {confirmingDeleteId === device.id ? (
-                  <span className="confirm-inline">
-                    ¿Eliminar?
-                    <button type="button" className="icon-btn danger" onClick={() => handleDelete(device.id)}>
-                      Sí
-                    </button>
-                    <button type="button" className="icon-btn" onClick={() => setConfirmingDeleteId(null)}>
-                      No
-                    </button>
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    className="icon-btn danger"
-                    title="Eliminar dispositivo"
-                    onClick={() => setConfirmingDeleteId(device.id)}
-                  >
-                    🗑
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="icon-btn danger"
+                  title="Eliminar dispositivo"
+                  onClick={() => setConfirmingDeleteId(device.id)}
+                >
+                  🗑
+                </button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {deleteError && <p className="error">{deleteError}</p>}
+
+      <ConfirmDialog
+        open={confirmingDeleteId !== null}
+        onOpenChange={(open) => !open && setConfirmingDeleteId(null)}
+        title={
+          deviceBeingDeleted
+            ? `¿Eliminar el dispositivo "${deviceBeingDeleted.name}" (${deviceBeingDeleted.public_id})?`
+            : "¿Eliminar el dispositivo?"
+        }
+        confirmLabel="Eliminar"
+        confirmPending={deleteDevice.isPending}
+        onConfirm={() => confirmingDeleteId !== null && handleDelete(confirmingDeleteId)}
+      />
     </div>
   );
 }

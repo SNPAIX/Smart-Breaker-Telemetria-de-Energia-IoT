@@ -1,3 +1,4 @@
+import { Toaster } from "react-hot-toast";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { ProtectedRoute } from "./auth/ProtectedRoute";
@@ -14,8 +15,23 @@ import { AdminUsersPage } from "./pages/admin/AdminUsersPage";
 
 function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
+    <>
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          style: {
+            background: "rgba(20, 16, 40, 0.92)",
+            color: "white",
+            backdropFilter: "blur(10px)",
+            borderRadius: "12px",
+            fontSize: "0.9rem",
+          },
+          success: { iconTheme: { primary: "#22c55e", secondary: "white" } },
+          error: { iconTheme: { primary: "#ef4444", secondary: "white" }, duration: 5000 },
+        }}
+      />
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
 
       <Route
         path="/sites"
@@ -99,9 +115,10 @@ function App() {
         }
       />
 
-      <Route path="/" element={<Navigate to="/sites" replace />} />
-      <Route path="*" element={<Navigate to="/sites" replace />} />
-    </Routes>
+        <Route path="/" element={<Navigate to="/sites" replace />} />
+        <Route path="*" element={<Navigate to="/sites" replace />} />
+      </Routes>
+    </>
   );
 }
 

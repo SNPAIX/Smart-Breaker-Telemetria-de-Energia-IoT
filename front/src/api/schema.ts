@@ -143,6 +143,23 @@ export interface paths {
         patch: operations["admin_update_user_api_v1_admin_users__user_id__patch"];
         trace?: never;
     };
+    "/api/v1/admin/users/{user_id}/deletion-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Preview User Deletion */
+        get: operations["admin_preview_user_deletion_api_v1_admin_users__user_id__deletion_impact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/sites": {
         parameters: {
             query?: never;
@@ -483,6 +500,30 @@ export interface paths {
         patch: operations["rename_my_site_api_v1_app_sites__site_id__patch"];
         trace?: never;
     };
+    "/api/v1/app/sites/{site_id}/membership": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Leave My Site
+         * @description Salida propia de un sitio — nunca de otro usuario (eso sigue siendo
+         *     exclusivo del admin, ver /api/v1/admin/sites/{id}/members/{user_id}).
+         *     Es lo que usa el botón "Desvincular" del acceso de soporte temporal en
+         *     "Mis sitios": un admin que se agregó a sí mismo puede salir sin tener
+         *     que volver al panel de administración.
+         */
+        delete: operations["leave_my_site_api_v1_app_sites__site_id__membership_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/app/sites/{site_id}/devices": {
         parameters: {
             query?: never;
@@ -528,6 +569,30 @@ export interface paths {
          *     `site_id` viaja en el body, no en el path — se valida aquí mismo.
          */
         post: operations["claim_a_device_api_v1_app_devices_claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/app/devices/{device_id}/unlink": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unlink A Device
+         * @description Contraparte de `/devices/claim`: cualquier miembro del sitio actual
+         *     del dispositivo puede desvincularlo (vuelve a quedar sin sitio, listo
+         *     para que alguien lo reclame de nuevo). `get_authorized_device` ya
+         *     confirma la membresía — sin este endpoint, la única forma de
+         *     desvincular un dispositivo era a través de un admin.
+         */
+        post: operations["unlink_a_device_api_v1_app_devices__device_id__unlink_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -725,7 +790,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get My Notification Preferences */
+        get: operations["get_my_notification_preferences_api_v1_app_notifications_preferences_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -819,6 +885,30 @@ export interface components {
             by_site: components["schemas"]["SiteMetricsOut"][];
             /** By Profile */
             by_profile: components["schemas"]["ProfileMetricsOut"][];
+        };
+        /**
+         * AdminSiteOut
+         * @description `SiteOut` normal más el dueño real del sitio — sin esto, la tabla de
+         *     admin muestra todos los sitios de la plataforma mezclados sin forma de
+         *     saber de quién es cada uno (un admin da soporte sobre el sitio de un
+         *     usuario, nunca es "su" sitio). `admin_is_member` marca si el admin que
+         *     pide la lista está vinculado ahora mismo a ese sitio (acceso temporal
+         *     de soporte), para que la tabla lo muestre sin abrir cada fila.
+         */
+        AdminSiteOut: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Kind */
+            kind: string;
+            /** Owner Email */
+            owner_email?: string | null;
+            /**
+             * Admin Is Member
+             * @default false
+             */
+            admin_is_member: boolean;
         };
         /** Body_login_for_access_token_api_v1_auth_login_post */
         Body_login_for_access_token_api_v1_auth_login_post: {
@@ -1087,6 +1177,28 @@ export interface components {
              */
             status: string;
         };
+        /**
+         * MySiteOut
+         * @description `SiteOut` normal más el rol propio del usuario en ese sitio y el
+         *     correo del dueño real — "Mis sitios" necesita distinguir a primera
+         *     vista si el usuario es dueño, invitado, o (si es admin) está ahí de
+         *     soporte temporal, sin tener que adivinarlo ni abrir nada.
+         */
+        MySiteOut: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Kind */
+            kind: string;
+            /**
+             * My Role
+             * @enum {string}
+             */
+            my_role: "owner" | "member";
+            /** Owner Email */
+            owner_email?: string | null;
+        };
         /** NotificationOut */
         NotificationOut: {
             /** Id */
@@ -1118,6 +1230,15 @@ export interface components {
             channel: string;
             /** Enabled */
             enabled: boolean;
+        };
+        /** OrphanedSiteOut */
+        OrphanedSiteOut: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Device Count */
+            device_count: number;
         };
         /** ProfileCreateIn */
         ProfileCreateIn: {
@@ -1275,6 +1396,11 @@ export interface components {
              */
             is_out_of_order: boolean;
             command?: components["schemas"]["CommandOut"] | null;
+            /**
+             * Max Current A
+             * @description Umbral de corte local vigente en el perfil del dispositivo — el firmware lo persiste en NVS (ver device_storage.h) para que el corte crítico local (sin red) refleje cambios de perfil hechos desde el panel, no solo el valor de fábrica.
+             */
+            max_current_a?: number | null;
         };
         /**
          * TelemetryIn
@@ -1375,6 +1501,15 @@ export interface components {
              * @default user
              */
             role: string;
+        };
+        /**
+         * UserDeletionImpactOut
+         * @description Vista previa de qué pasaría si se borra este usuario — se consulta
+         *     ANTES de confirmar el borrado, nunca bloquea nada por sí sola.
+         */
+        UserDeletionImpactOut: {
+            /** Orphaned Sites */
+            orphaned_sites: components["schemas"]["OrphanedSiteOut"][];
         };
         /** UserUpdateIn */
         UserUpdateIn: {
@@ -1790,7 +1925,9 @@ export interface operations {
     };
     admin_delete_user_api_v1_admin_users__user_id__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                delete_orphaned_sites?: boolean;
+            };
             header?: never;
             path: {
                 user_id: number;
@@ -1852,6 +1989,37 @@ export interface operations {
             };
         };
     };
+    admin_preview_user_deletion_api_v1_admin_users__user_id__deletion_impact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserDeletionImpactOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_list_sites_api_v1_admin_sites_get: {
         parameters: {
             query?: never;
@@ -1867,7 +2035,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SiteOut"][];
+                    "application/json": components["schemas"]["AdminSiteOut"][];
                 };
             };
         };
@@ -2664,7 +2832,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SiteOut"][];
+                    "application/json": components["schemas"]["MySiteOut"][];
                 };
             };
         };
@@ -2766,6 +2934,35 @@ export interface operations {
             };
         };
     };
+    leave_my_site_api_v1_app_sites__site_id__membership_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_site_devices_api_v1_app_sites__site_id__devices_get: {
         parameters: {
             query?: never;
@@ -2844,6 +3041,37 @@ export interface operations {
                 "application/json": components["schemas"]["ClaimIn"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlink_a_device_api_v1_app_devices__device_id__unlink_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -3173,6 +3401,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationOut"][];
+                };
+            };
+        };
+    };
+    get_my_notification_preferences_api_v1_app_notifications_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPreferenceOut"][];
                 };
             };
         };

@@ -1,29 +1,59 @@
-# VoltGuard Platform v2
+# VoltGuard
 
-Plataforma IoT de monitoreo, administración y protección eléctrica (Smart Breaker) — versión 2, desarrollada en la rama `experiment/voltguard-platform-v2` a partir del repositorio base [Smart-Breaker-Telemetria-de-Energia-IoT](https://github.com/SNPAIX/Smart-Breaker-Telemetria-de-Energia-IoT).
-
-
+Plataforma IoT de monitoreo, control y protección eléctrica ("breaker inteligente"): un
+dispositivo físico (ESP32-C3 + sensor PZEM-004T + relé) mide el consumo de una carga eléctrica en
+tiempo real y puede cortarla automáticamente ante una condición de riesgo, de forma autónoma y sin
+depender de la red. Un backend central administra usuarios, sitios y dispositivos, expuesto a un
+dashboard web y a una aplicación móvil Android.
 
 ## Estructura del monorepo
 
 ```
 .
-├── backend-server/   # API FastAPI + PostgreSQL + Alembic (Python 3.12)
-├── front/            # Dashboard administrativo (React + Vite + TypeScript)
-├── mobile/           # App móvil de usuario final (Expo + React Native + TypeScript)
-├── ino/              # Firmware ESP32-C3 (base validado, no modificar pines/lógica eléctrica)
-└── docs/             # Documentación de referencia (PDF de propuesta, README del repo base)
+├── backend-server/   API FastAPI + PostgreSQL + Alembic (Python 3.12)
+├── front/            Dashboard web — usuarios y administración (React + Vite + TypeScript)
+├── mobile/           App Android de usuario final (React + Capacitor + TypeScript)
+├── ino/              Firmware ESP32-C3 (no modificar pines/lógica eléctrica ya validada)
+├── IA-Assistant/     Asistente de voz, módulo opcional y desacoplable
+├── infra/            Proxy inverso y TLS para el despliegue completo (Caddy)
+└── docs/             Documentación de referencia
 ```
 
-Cada carpeta es independiente y no debe mezclar dependencias ni código de las demás. El único contrato compartido entre ellas es la API HTTP expuesta por `backend-server/`.
+Cada carpeta es independiente, con sus propias dependencias. El único contrato compartido entre
+clientes (`front/`, `mobile/`, `ino/`) es la API HTTP/WebSocket que expone `backend-server/`.
 
-## Punto de partida
+## Desarrollo local
 
-- **Hardware**: `ino/code.ino` — validado experimentalmente (PZEM-004T + relé sobre ESP32-C3). No modificar pines ni la lógica de medición/control ya probada; solo se le agrega la capa de red (WiFi, aprovisionamiento, llamadas HTTP al backend, cola de comandos, corte crítico local).
-- **Backend**: `backend-server/` parte del código del repo base (FastAPI/SQLAlchemy/Alembic/PostgreSQL), pero requiere un rediseño de modelo de datos (abstracción de `Site`) y de superficies de API (`iot` / `app` / `admin`).
-- **Frontend / Mobile**: se construyen desde cero en esta v2.
+Backend (con recarga de bind-mount, sin proxy ni TLS):
+
+```
+cd backend-server
+docker compose up -d
+docker compose exec api alembic upgrade head
+```
+
+Dashboard web y app móvil (cada uno en su propio puerto de Vite, apuntando a `localhost:8000`):
+
+```
+cd front && npm install && npm run dev
+cd mobile && npm install && npm run dev
+```
+
+## Despliegue completo
+
+El `docker-compose.yml` de la raíz levanta la base de datos, el backend y un proxy Caddy con TLS
+local, sirviendo el build de `front/` bajo el mismo origen que la API. Sin dependencia de ningún
+registro de imágenes: cada máquina construye las suyas con `docker compose build`.
+
+```
+cp .env.example .env   # completar variables
+docker compose up -d --build
+```
+
+Más detalle en [`docs/despliegue.md`](docs/despliegue.md).
 
 ## Documentación
 
-- [`docs/EDSIA_PROYECTO.pdf`](docs/EDSIA_PROYECTO.pdf) — propuesta original del proyecto (programa EDSIA 2026).
-- [`docs/BASE-REPO-README.md`](docs/BASE-REPO-README.md) — README del repositorio base, conservado como referencia histórica.
+- [`docs/despliegue.md`](docs/despliegue.md) — despliegue de la plataforma completa.
+- [`docs/BASE-REPO-README.md`](docs/BASE-REPO-README.md) — README del repositorio base del que
+  partió el firmware, conservado como referencia histórica.

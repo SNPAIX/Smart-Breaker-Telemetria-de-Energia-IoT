@@ -1,6 +1,12 @@
 :root {
   font-family: "Inter", system-ui, sans-serif;
-  color-scheme: light dark;
+  /* Toda la UI de este proyecto es exclusivamente clara (no hay tokens de
+     tema oscuro definidos en ningún lado) — "light dark" le permitía al
+     navegador pintar controles nativos (inputs, el propio <select> y su
+     lista desplegable) con la paleta oscura del sistema operativo,
+     produciendo texto oscuro sobre fondo oscuro casi ilegible. mobile/
+     ya usa "light" a secas; se alinea acá por el mismo motivo. */
+  color-scheme: light;
 
   --brand: #3a58ed;
   --brand-dark: #0f0125;
@@ -108,6 +114,56 @@ body {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
+}
+
+/* Controles de formulario con la misma identidad "glass" que el resto de
+   la UI (fondo translúcido + blur + sombra suave), en vez del estilo plano
+   por defecto del navegador. `color-scheme: light` en :root (ver arriba)
+   es lo que evita que, con el sistema en modo oscuro, el navegador pinte
+   estos controles nativos (y la lista desplegable del <select>) con su
+   paleta oscura — sin eso, el texto queda casi invisible. */
+input,
+select,
+textarea {
+  color: var(--text);
+  font: inherit;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-glass);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+select {
+  /* Deliberadamente SIN `appearance: none` ni flecha propia: se probó
+     (ver historial) y rompe el renderizado nativo del control en algunos
+     motores (el <select> quedaba como una caja de texto editable rara,
+     sin lista desplegable usable) — la flecha nativa del navegador es
+     menos "de marca" pero funciona igual en todos lados, que es lo que
+     importa acá. */
+  cursor: pointer;
+  color-scheme: light;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 3px var(--brand-soft);
 }
 
 /* --- Tarjetas (glassmorfismo) --- */
@@ -627,4 +683,79 @@ button:disabled {
 
 .btn-primary:hover:not(:disabled) {
   box-shadow: 0 8px 20px rgba(124, 58, 237, 0.35);
+}
+
+/* --- Modal de confirmación (Radix Dialog) --- */
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 12, 35, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 100;
+  animation: dialog-fade-in 0.15s ease-out;
+}
+
+.dialog-content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(92vw, 460px);
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--glass-bg, rgba(255, 255, 255, 0.92));
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.6));
+  border-radius: var(--radius-lg, 18px);
+  box-shadow: 0 24px 60px rgba(17, 12, 35, 0.35);
+  padding: 1.5rem;
+  z-index: 101;
+  animation: dialog-pop-in 0.18s ease-out;
+}
+
+.dialog-title {
+  margin: 0 0 0.9rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.dialog-body {
+  margin-bottom: 1.1rem;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.dialog-body ul {
+  margin: 0.4rem 0 0.7rem;
+  padding-left: 1.2rem;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+@keyframes dialog-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-pop-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
 }

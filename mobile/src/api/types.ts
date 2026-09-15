@@ -5,6 +5,7 @@
 import type { components } from "./schema";
 
 export type Site = components["schemas"]["SiteOut"];
+export type MySite = components["schemas"]["MySiteOut"];
 export type Device = components["schemas"]["DeviceOut"];
 // Colisión de nombres: existe `SiteCreateIn` también en admin_api (sin
 // dueño automático) — ver ADR 0020 para el criterio de namespacing.
@@ -19,6 +20,7 @@ export type DeviceConsumption = components["schemas"]["DeviceConsumptionOut"];
 export type ConsumptionPoint = components["schemas"]["ConsumptionPointOut"];
 export type DevicePrediction = components["schemas"]["DevicePredictionOut"];
 export type NotificationItem = components["schemas"]["NotificationOut"];
+export type NotificationPreference = components["schemas"]["NotificationPreferenceOut"];
 export type Token = components["schemas"]["Token"];
 
 // Asistente de voz (etapa 14) — solo existe si el backend se desplegó con

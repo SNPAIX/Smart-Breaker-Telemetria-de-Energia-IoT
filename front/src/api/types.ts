@@ -4,6 +4,8 @@
 import type { components } from "./schema";
 
 export type Site = components["schemas"]["SiteOut"];
+export type MySite = components["schemas"]["MySiteOut"];
+export type AdminSite = components["schemas"]["AdminSiteOut"];
 export type Device = components["schemas"]["DeviceOut"];
 // FastAPI namespaca los nombres duplicados entre módulos de schemas —
 // DeviceStateOut existe tanto en app_api (con is_locked_out, la que
@@ -17,6 +19,7 @@ export type DeviceConsumption = components["schemas"]["DeviceConsumptionOut"];
 export type ConsumptionPoint = components["schemas"]["ConsumptionPointOut"];
 export type DevicePrediction = components["schemas"]["DevicePredictionOut"];
 export type NotificationItem = components["schemas"]["NotificationOut"];
+export type NotificationPreference = components["schemas"]["NotificationPreferenceOut"];
 
 // Igual que DeviceState: UserOut existe en auth (registro) y en admin_api
 // (CRUD administrativo) — se usa la de admin_api aquí.
@@ -28,5 +31,8 @@ export type SiteMetrics = components["schemas"]["SiteMetricsOut"];
 export type ProfileMetrics = components["schemas"]["ProfileMetricsOut"];
 export type AdminOverview = components["schemas"]["AdminOverviewOut"];
 export type DeviceCreateOut = components["schemas"]["DeviceCreateOut"];
+export type SiteMember = components["schemas"]["SiteMemberOut"];
+export type UserDeletionImpact = components["schemas"]["UserDeletionImpactOut"];
+export type Tariff = components["schemas"]["TariffOut"];
 
 export type Token = components["schemas"]["Token"];

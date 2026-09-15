@@ -1,3 +1,4 @@
+import { Toaster } from "react-hot-toast";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { ProtectedRoute } from "./auth/ProtectedRoute";
@@ -10,8 +11,24 @@ import { SitesPage } from "./pages/SitesPage";
 
 function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
+    <>
+      <Toaster
+        position="top-center"
+        containerStyle={{ top: "calc(env(safe-area-inset-top, 0px) + 70px)" }}
+        toastOptions={{
+          style: {
+            background: "rgba(23, 16, 41, 0.92)",
+            color: "white",
+            backdropFilter: "blur(10px)",
+            borderRadius: "14px",
+            fontSize: "0.85rem",
+          },
+          success: { iconTheme: { primary: "#14b881", secondary: "white" } },
+          error: { iconTheme: { primary: "#e0304a", secondary: "white" }, duration: 5000 },
+        }}
+      />
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
 
       <Route
         path="/sites"
@@ -54,9 +71,10 @@ function App() {
         }
       />
 
-      <Route path="/" element={<Navigate to="/sites" replace />} />
-      <Route path="*" element={<Navigate to="/sites" replace />} />
-    </Routes>
+        <Route path="/" element={<Navigate to="/sites" replace />} />
+        <Route path="*" element={<Navigate to="/sites" replace />} />
+      </Routes>
+    </>
   );
 }
 

@@ -59,7 +59,7 @@ def get_current_site_member(
     if membership is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="No perteneces a este sitio.",
+            detail="El usuario no pertenece a este sitio.",
         )
     return membership
 

@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from app.core.security import create_access_token, get_password_hash
 from app.db import SessionLocal
 from app.main import app
-from app.models.entities import Device, DeviceProfile, Site, User
+from app.models.entities import Device, DeviceProfile, Site, SiteMember, User
 from simulator.device_simulator import DeviceSimulator
 
 client = TestClient(app)
@@ -337,5 +337,182 @@ def test_user_crud() -> None:
 
         deleted = client.delete(f"/api/v1/admin/users/{user_id}", headers=_auth(token))
         assert deleted.status_code == 204
+    finally:
+        _cleanup()
+
+
+def test_admin_site_list_incluye_el_correo_del_dueno() -> None:
+    """La consola de admin da soporte sobre sitios de terceros — sin el
+    dueño resuelto en la lista, no hay forma de saber de quién es cada
+    sitio con solo ver /api/v1/admin/sites."""
+    _cleanup()
+    try:
+        token = _admin_token()
+
+        with_owner = client.post(
+            "/api/v1/admin/sites", headers=_auth(token), json={"name": TEST_SITE_1, "kind": "taller"}
+        )
+        assert with_owner.status_code == 201
+        site1_id = with_owner.json()["id"]
+
+        without_owner = client.post(
+            "/api/v1/admin/sites", headers=_auth(token), json={"name": TEST_SITE_2, "kind": "taller"}
+        )
+        assert without_owner.status_code == 201
+
+        db = SessionLocal()
+        owner = User(
+            email=NORMAL_EMAIL, hashed_password=get_password_hash("password123"), role="user"
+        )
+        db.add(owner)
+        db.commit()
+        db.refresh(owner)
+        db.add(SiteMember(site_id=site1_id, user_id=owner.id, role="owner"))
+        db.commit()
+        db.close()
+
+        site2_id = without_owner.json()["id"]
+
+        db = SessionLocal()
+        admin_user = db.query(User).filter(User.email == ADMIN_EMAIL).one()
+        db.add(SiteMember(site_id=site2_id, user_id=admin_user.id, role="member"))
+        db.commit()
+        db.close()
+
+        listed = client.get("/api/v1/admin/sites", headers=_auth(token))
+        assert listed.status_code == 200
+        by_id = {site["id"]: site for site in listed.json()}
+        assert by_id[site1_id]["owner_email"] == NORMAL_EMAIL
+        assert by_id[site2_id]["owner_email"] is None
+
+        # El admin se vinculó (soporte) a site2, nunca a site1.
+        assert by_id[site2_id]["admin_is_member"] is True
+        assert by_id[site1_id]["admin_is_member"] is False
+    finally:
+        _cleanup()
+
+
+def _crear_sitio_con_dueno_unico_y_dispositivo(admin_token: str) -> tuple[int, int, int]:
+    """Devuelve (owner_user_id, site_id, device_id) — un sitio con un solo
+    owner (NORMAL_EMAIL) y un dispositivo, listo para probar el impacto de
+    borrar a ese usuario."""
+    site = client.post(
+        "/api/v1/admin/sites", headers=_auth(admin_token), json={"name": TEST_SITE_1, "kind": "casa"}
+    )
+    site_id = site.json()["id"]
+
+    db = SessionLocal()
+    owner = User(email=NORMAL_EMAIL, hashed_password=get_password_hash("password123"), role="user")
+    db.add(owner)
+    db.commit()
+    db.refresh(owner)
+    db.add(SiteMember(site_id=site_id, user_id=owner.id, role="owner"))
+    device = Device(public_id=TEST_DEVICE, name="Dispositivo de prueba", site_id=site_id)
+    db.add(device)
+    db.commit()
+    owner_id, device_id = owner.id, device.id
+    db.close()
+    return owner_id, site_id, device_id
+
+
+def test_preview_de_borrado_lista_sitios_que_quedarian_huerfanos() -> None:
+    _cleanup()
+    try:
+        admin_token = _admin_token()
+        owner_id, site_id, _device_id = _crear_sitio_con_dueno_unico_y_dispositivo(admin_token)
+
+        preview = client.get(
+            f"/api/v1/admin/users/{owner_id}/deletion-impact", headers=_auth(admin_token)
+        )
+        assert preview.status_code == 200
+        orphaned = preview.json()["orphaned_sites"]
+        assert len(orphaned) == 1
+        assert orphaned[0]["id"] == site_id
+        assert orphaned[0]["device_count"] == 1
+    finally:
+        _cleanup()
+
+
+def test_borrar_usuario_sin_flag_deja_el_sitio_huerfano_pero_intacto() -> None:
+    _cleanup()
+    try:
+        admin_token = _admin_token()
+        owner_id, site_id, device_id = _crear_sitio_con_dueno_unico_y_dispositivo(admin_token)
+
+        deleted = client.delete(f"/api/v1/admin/users/{owner_id}", headers=_auth(admin_token))
+        assert deleted.status_code == 204
+
+        site_check = client.get(f"/api/v1/admin/sites/{site_id}", headers=_auth(admin_token))
+        assert site_check.status_code == 200
+
+        db = SessionLocal()
+        device = db.query(Device).filter(Device.id == device_id).one()
+        assert device.site_id == site_id  # el dispositivo no se movió
+        db.close()
+    finally:
+        _cleanup()
+
+
+def test_borrar_usuario_con_flag_borra_el_sitio_y_desvincula_sus_dispositivos() -> None:
+    _cleanup()
+    try:
+        admin_token = _admin_token()
+        owner_id, site_id, device_id = _crear_sitio_con_dueno_unico_y_dispositivo(admin_token)
+
+        deleted = client.delete(
+            f"/api/v1/admin/users/{owner_id}?delete_orphaned_sites=true", headers=_auth(admin_token)
+        )
+        assert deleted.status_code == 204
+
+        site_check = client.get(f"/api/v1/admin/sites/{site_id}", headers=_auth(admin_token))
+        assert site_check.status_code == 404
+
+        db = SessionLocal()
+        device = db.query(Device).filter(Device.id == device_id).one()
+        assert device.site_id is None  # desvinculado, no borrado
+        db.delete(device)
+        db.commit()
+        db.close()
+    finally:
+        _cleanup()
+
+
+def test_sitio_con_coowner_no_se_borra_aunque_se_use_el_flag() -> None:
+    _cleanup()
+    try:
+        admin_token = _admin_token()
+        owner_id, site_id, device_id = _crear_sitio_con_dueno_unico_y_dispositivo(admin_token)
+
+        db = SessionLocal()
+        co_owner = User(
+            email=NORMAL_EMAIL + ".co", hashed_password=get_password_hash("password123"), role="user"
+        )
+        db.add(co_owner)
+        db.commit()
+        db.refresh(co_owner)
+        db.add(SiteMember(site_id=site_id, user_id=co_owner.id, role="owner"))
+        db.commit()
+        co_owner_id = co_owner.id
+        db.close()
+
+        preview = client.get(
+            f"/api/v1/admin/users/{owner_id}/deletion-impact", headers=_auth(admin_token)
+        )
+        assert preview.json()["orphaned_sites"] == []  # hay un co-owner, no queda huérfano
+
+        deleted = client.delete(
+            f"/api/v1/admin/users/{owner_id}?delete_orphaned_sites=true", headers=_auth(admin_token)
+        )
+        assert deleted.status_code == 204
+
+        site_check = client.get(f"/api/v1/admin/sites/{site_id}", headers=_auth(admin_token))
+        assert site_check.status_code == 200  # el sitio sigue vivo gracias al co-owner
+
+        db = SessionLocal()
+        db.query(Device).filter(Device.id == device_id).delete()
+        db.query(SiteMember).filter(SiteMember.user_id == co_owner_id).delete()
+        db.query(User).filter(User.id == co_owner_id).delete()
+        db.commit()
+        db.close()
     finally:
         _cleanup()

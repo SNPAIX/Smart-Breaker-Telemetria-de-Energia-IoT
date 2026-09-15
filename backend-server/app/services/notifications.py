@@ -50,6 +50,27 @@ def _channel_enabled(db: Session, user_id: int, channel: str, *, default: bool) 
     return preference.enabled if preference is not None else default
 
 
+# Únicos canales que el sistema realmente evalúa (ver _notify_site_members
+# más abajo) — el valor es el default que aplica si el usuario nunca
+# guardó una preferencia explícita para ese canal.
+DEFAULT_CHANNEL_STATE: dict[str, bool] = {"in_app": True, "push": False}
+
+
+def get_notification_preferences(db: Session, user_id: int) -> list[dict[str, bool | str]]:
+    """Estado efectivo (guardado o default) de cada canal conocido, para que
+    la UI pueda mostrar los interruptores ya en su posición real en vez de
+    asumir que todo arranca en su valor por defecto — antes de este
+    endpoint, la preferencia solo podía escribirse (PATCH) a ciegas, nunca
+    leerse de vuelta."""
+    return [
+        {
+            "channel": channel,
+            "enabled": _channel_enabled(db, user_id, channel, default=default),
+        }
+        for channel, default in DEFAULT_CHANNEL_STATE.items()
+    ]
+
+
 def _notify_site_members(
     db: Session, device: Device, title: str, body: str, *, event_id: int | None = None
 ) -> None:

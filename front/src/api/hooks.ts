@@ -11,11 +11,17 @@ import type {
   DeviceCost,
   DeviceCreateOut,
   DeviceEvent,
+  MySite,
   DeviceMetrics,
   DevicePrediction,
   DeviceState,
+  AdminSite,
   NotificationItem,
+  NotificationPreference,
   Site,
+  SiteMember,
+  Tariff,
+  UserDeletionImpact,
 } from "./types";
 
 // --- Usuario final (/api/v1/app) ---
@@ -23,7 +29,7 @@ import type {
 export function useMySites() {
   return useQuery({
     queryKey: ["sites"],
-    queryFn: async () => (await apiClient.get<Site[]>("/api/v1/app/sites")).data,
+    queryFn: async () => (await apiClient.get<MySite[]>("/api/v1/app/sites")).data,
   });
 }
 
@@ -55,21 +61,31 @@ export function useDeleteMySite() {
   });
 }
 
+export function useLeaveMySite() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (siteId: number) => {
+      await apiClient.delete(`/api/v1/app/sites/${siteId}/membership`);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sites"] }),
+  });
+}
+
+// Refresca solo (polling) para reflejar un bloqueo por CRITICAL_OVERLOAD
+// sin que el usuario tenga que recargar.
+const DEVICE_POLL_INTERVAL_MS = 2000;
+
 export function useSiteDevices(siteId: number | undefined) {
   return useQuery({
     queryKey: ["site-devices", siteId],
     queryFn: async () =>
       (await apiClient.get<Device[]>(`/api/v1/app/sites/${siteId}/devices`)).data,
     enabled: siteId !== undefined,
+    // Mismo motivo que useDevice: sin esto la tarjeta se queda con el
+    // estado viejo hasta que algo más dispare un refetch.
+    refetchInterval: DEVICE_POLL_INTERVAL_MS,
   });
 }
-
-// El detalle del dispositivo se refresca solo (polling) para reflejar un
-// bloqueo por CRITICAL_OVERLOAD sin que el usuario tenga que recargar.
-// Bajado de 5s a 2s (14-sep, HIL real): con hardware real de por medio la
-// diferencia se siente — la telemetria del dispositivo ya llega casi
-// continua, la UI no deberia ser el cuello de botella visible.
-const DEVICE_POLL_INTERVAL_MS = 2000;
 
 export function useDevice(deviceId: number | undefined) {
   return useQuery({
@@ -113,11 +129,8 @@ export function useDeviceMetrics(deviceId: number | undefined) {
   });
 }
 
-// Costo/predicción no necesitan actualizarse al segundo, pero sí deben
-// reflejar lecturas nuevas sin que el usuario tenga que recargar — antes
-// se pedían una sola vez al montar la página y se quedaban congeladas
-// (bug reportado: "no veo movimiento" en Costo/Predicción mientras el
-// consumo sí se actualizaba).
+// Antes se pedían una sola vez al montar y quedaban congelados sin
+// reflejar lecturas nuevas.
 const COST_POLL_INTERVAL_MS = 15000;
 
 export function useDeviceCost(deviceId: number | undefined) {
@@ -138,12 +151,8 @@ export interface ConsumptionRangeParams {
   end?: string;
 }
 
-// Consumo/costo no necesitan la frescura de la telemetria/estado (por eso
-// no van por el WebSocket de notificaciones, que es para eventos puntuales,
-// no para un agregado que cambia con cada lectura) pero sí deben reflejar
-// lecturas nuevas sin que el usuario tenga que recargar la pantalla. La
-// vista "hoy, por hora" sí se beneficia de refrescar más seguido — es la
-// que el usuario mira mientras el consumo va llegando en vivo.
+// La vista "hoy, por hora" se beneficia de refrescar más seguido, es la
+// que el usuario mira mientras el consumo llega en vivo.
 const CONSUMPTION_POLL_INTERVAL_MS = 15000;
 const HOURLY_CONSUMPTION_POLL_INTERVAL_MS = 5000;
 
@@ -192,6 +201,10 @@ export function useSwitchDevice(deviceId: number) {
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["device", deviceId] });
+      // Coincidencia parcial de clave: refresca la tarjeta de este
+      // dispositivo en cualquier listado de "dispositivos del sitio" que
+      // esté montado, sin necesidad de saber a qué sitio pertenece.
+      queryClient.invalidateQueries({ queryKey: ["site-devices"] });
     },
   });
 }
@@ -219,11 +232,46 @@ export function useClaimDevice() {
   });
 }
 
+export function useUnlinkDevice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ deviceId }: { deviceId: number; siteId: number }) =>
+      (await apiClient.post<Device>(`/api/v1/app/devices/${deviceId}/unlink`)).data,
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["site-devices", variables.siteId] });
+    },
+  });
+}
+
 export function useMyNotifications() {
   return useQuery({
     queryKey: ["notifications"],
     queryFn: async () =>
       (await apiClient.get<NotificationItem[]>("/api/v1/app/notifications")).data,
+  });
+}
+
+export function useNotificationPreferences() {
+  return useQuery({
+    queryKey: ["notification-preferences"],
+    queryFn: async () =>
+      (
+        await apiClient.get<NotificationPreference[]>("/api/v1/app/notifications/preferences")
+      ).data,
+  });
+}
+
+export function useSetNotificationPreference() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { channel: string; enabled: boolean }) =>
+      (
+        await apiClient.patch<NotificationPreference>(
+          "/api/v1/app/notifications/preferences",
+          payload,
+        )
+      ).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notification-preferences"] }),
   });
 }
 
@@ -268,20 +316,40 @@ export function useUpdateAdminUser() {
   });
 }
 
+export function useUserDeletionImpact() {
+  return useMutation({
+    mutationFn: async (userId: number) =>
+      (
+        await apiClient.get<UserDeletionImpact>(`/api/v1/admin/users/${userId}/deletion-impact`)
+      ).data,
+  });
+}
+
 export function useDeleteAdminUser() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (userId: number) => {
-      await apiClient.delete(`/api/v1/admin/users/${userId}`);
+    mutationFn: async ({
+      userId,
+      deleteOrphanedSites,
+    }: {
+      userId: number;
+      deleteOrphanedSites: boolean;
+    }) => {
+      await apiClient.delete(
+        `/api/v1/admin/users/${userId}?delete_orphaned_sites=${deleteOrphanedSites}`,
+      );
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-sites"] });
+    },
   });
 }
 
 export function useAdminSites() {
   return useQuery({
     queryKey: ["admin-sites"],
-    queryFn: async () => (await apiClient.get<Site[]>("/api/v1/admin/sites")).data,
+    queryFn: async () => (await apiClient.get<AdminSite[]>("/api/v1/admin/sites")).data,
   });
 }
 
@@ -310,6 +378,87 @@ export function useDeleteAdminSite() {
       await apiClient.delete(`/api/v1/admin/sites/${siteId}`);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-sites"] }),
+  });
+}
+
+export function useAdminSiteMembers(siteId: number | undefined) {
+  return useQuery({
+    queryKey: ["admin-site-members", siteId],
+    queryFn: async () =>
+      (await apiClient.get<SiteMember[]>(`/api/v1/admin/sites/${siteId}/members`)).data,
+    enabled: siteId !== undefined,
+  });
+}
+
+export function useAddAdminSiteMember() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      siteId,
+      userId,
+      role,
+    }: {
+      siteId: number;
+      userId: number;
+      role: string;
+    }) =>
+      (
+        await apiClient.post<SiteMember>(`/api/v1/admin/sites/${siteId}/members`, {
+          user_id: userId,
+          role,
+        })
+      ).data,
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-site-members", variables.siteId] });
+      // También refresca la lista de sitios: ahí vive la insignia
+      // "vinculado (soporte)" que depende de la membresía del admin.
+      queryClient.invalidateQueries({ queryKey: ["admin-sites"] });
+    },
+  });
+}
+
+export function useRemoveAdminSiteMember() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ siteId, userId }: { siteId: number; userId: number }) => {
+      await apiClient.delete(`/api/v1/admin/sites/${siteId}/members/${userId}`);
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-site-members", variables.siteId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-sites"] });
+    },
+  });
+}
+
+export function useAdminTariffs(siteId: number | undefined) {
+  return useQuery({
+    queryKey: ["admin-tariffs", siteId],
+    queryFn: async () =>
+      (await apiClient.get<Tariff[]>(`/api/v1/admin/sites/${siteId}/tariffs`)).data,
+    enabled: siteId !== undefined,
+  });
+}
+
+export function useCreateAdminTariff() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      siteId,
+      price_per_kwh,
+      currency,
+    }: {
+      siteId: number;
+      price_per_kwh: number;
+      currency: string;
+    }) =>
+      (
+        await apiClient.post<Tariff>(`/api/v1/admin/sites/${siteId}/tariffs`, {
+          price_per_kwh,
+          currency,
+        })
+      ).data,
+    onSuccess: (_data, variables) =>
+      queryClient.invalidateQueries({ queryKey: ["admin-tariffs", variables.siteId] }),
   });
 }
 

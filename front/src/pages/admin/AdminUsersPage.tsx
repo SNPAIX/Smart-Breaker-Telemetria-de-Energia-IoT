@@ -1,4 +1,3 @@
-import { isAxiosError } from "axios";
 import { useState, type FormEvent } from "react";
 
 import {
@@ -6,47 +5,58 @@ import {
   useCreateAdminUser,
   useDeleteAdminUser,
   useUpdateAdminUser,
+  useUserDeletionImpact,
 } from "../../api/hooks";
 import type { AdminUser } from "../../api/types";
-
-function extractErrorDetail(error: unknown, fallback: string): string {
-  if (isAxiosError(error) && typeof error.response?.data?.detail === "string") {
-    return error.response.data.detail;
-  }
-  return fallback;
-}
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { notifyError, notifySuccess } from "../../lib/errors";
 
 function UserRow({ user }: { user: AdminUser }) {
   const updateUser = useUpdateAdminUser();
   const deleteUser = useDeleteAdminUser();
+  const previewDeletion = useUserDeletionImpact();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [rowError, setRowError] = useState<string | null>(null);
+  const [orphanedSites, setOrphanedSites] = useState<{ id: number; name: string; device_count: number }[]>([]);
+  const [deleteOrphanedSites, setDeleteOrphanedSites] = useState(false);
 
   const handleRoleChange = async (role: string) => {
-    setRowError(null);
     try {
       await updateUser.mutateAsync({ userId: user.id, role });
     } catch (error) {
-      setRowError(extractErrorDetail(error, "No se pudo actualizar el rol."));
+      notifyError(error, "No se pudo actualizar el rol.");
     }
   };
 
   const handleToggleActive = async () => {
-    setRowError(null);
     try {
       await updateUser.mutateAsync({ userId: user.id, is_active: !user.is_active });
     } catch (error) {
-      setRowError(extractErrorDetail(error, "No se pudo actualizar el estado."));
+      notifyError(error, "No se pudo actualizar el estado.");
+    }
+  };
+
+  const startDeleteFlow = async () => {
+    try {
+      const impact = await previewDeletion.mutateAsync(user.id);
+      setOrphanedSites(impact.orphaned_sites);
+      setDeleteOrphanedSites(false);
+      setConfirmingDelete(true);
+    } catch (error) {
+      notifyError(error, "No se pudo revisar el impacto de eliminar este usuario.");
     }
   };
 
   const handleDelete = async () => {
-    setRowError(null);
     try {
-      await deleteUser.mutateAsync(user.id);
-    } catch (error) {
-      setRowError(extractErrorDetail(error, "No se pudo eliminar el usuario."));
+      await deleteUser.mutateAsync({ userId: user.id, deleteOrphanedSites });
+      notifySuccess(
+        deleteOrphanedSites && orphanedSites.length > 0
+          ? "Usuario y sitios huérfanos eliminados."
+          : "Usuario eliminado.",
+      );
       setConfirmingDelete(false);
+    } catch (error) {
+      notifyError(error, "No se pudo eliminar el usuario.");
     }
   };
 
@@ -76,27 +86,58 @@ function UserRow({ user }: { user: AdminUser }) {
         </button>
       </td>
       <td>
-        {confirmingDelete ? (
-          <span className="confirm-inline">
-            ¿Eliminar?
-            <button type="button" className="icon-btn danger" onClick={handleDelete}>
-              Sí
-            </button>
-            <button type="button" className="icon-btn" onClick={() => setConfirmingDelete(false)}>
-              No
-            </button>
-          </span>
-        ) : (
-          <button
-            type="button"
-            className="icon-btn danger"
-            title="Eliminar usuario"
-            onClick={() => setConfirmingDelete(true)}
-          >
-            🗑
-          </button>
-        )}
-        {rowError && <p className="error site-card-error">{rowError}</p>}
+        <button
+          type="button"
+          className="icon-btn danger"
+          title="Eliminar usuario"
+          onClick={startDeleteFlow}
+          disabled={previewDeletion.isPending}
+        >
+          🗑
+        </button>
+
+        <ConfirmDialog
+          open={confirmingDelete}
+          onOpenChange={setConfirmingDelete}
+          title={`¿Eliminar a ${user.email}?`}
+          confirmLabel="Eliminar"
+          confirmPending={deleteUser.isPending}
+          onConfirm={handleDelete}
+        >
+          {orphanedSites.length > 0 && (
+            <>
+              <p className="error" style={{ marginTop: 0 }}>
+                Este usuario es el único dueño de {orphanedSites.length}{" "}
+                {orphanedSites.length === 1 ? "sitio" : "sitios"} — al borrarlo,{" "}
+                {orphanedSites.length === 1 ? "ese sitio quedará" : "esos sitios quedarán"} sin
+                dueño:
+              </p>
+              <ul>
+                {orphanedSites.map((site) => (
+                  <li key={site.id}>
+                    {site.name} — {site.device_count}{" "}
+                    {site.device_count === 1 ? "dispositivo" : "dispositivos"}
+                  </li>
+                ))}
+              </ul>
+              <label className="inline-checkbox" style={{ display: "flex", marginBottom: "0.6rem" }}>
+                <input
+                  type="checkbox"
+                  checked={deleteOrphanedSites}
+                  onChange={(e) => setDeleteOrphanedSites(e.target.checked)}
+                />
+                Borrar también {orphanedSites.length === 1 ? "ese sitio" : "esos sitios"}
+              </label>
+              {deleteOrphanedSites && (
+                <p className="error" style={{ fontSize: "0.8rem" }}>
+                  Esto es irreversible. Los dispositivos de{" "}
+                  {orphanedSites.length === 1 ? "ese sitio" : "esos sitios"} quedarán sin sitio —
+                  alguien va a tener que volver a vincularlos a uno.
+                </p>
+              )}
+            </>
+          )}
+        </ConfirmDialog>
       </td>
     </tr>
   );
@@ -109,18 +150,17 @@ export function AdminUsersPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("user");
-  const [formError, setFormError] = useState<string | null>(null);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    setFormError(null);
     try {
       await createUser.mutateAsync({ email, password, role });
       setEmail("");
       setPassword("");
       setRole("user");
+      notifySuccess("Usuario creado.");
     } catch (error) {
-      setFormError(extractErrorDetail(error, "No se pudo crear el usuario (¿el correo ya existe?)."));
+      notifyError(error, "No se pudo crear el usuario (¿el correo ya existe?).");
     }
   };
 
@@ -152,7 +192,6 @@ export function AdminUsersPage() {
           Crear usuario
         </button>
       </form>
-      {formError && <p className="error">{formError}</p>}
 
       {isLoading && <p>Cargando usuarios...</p>}
       {isError && <p className="error">No se pudieron cargar los usuarios.</p>}
@@ -164,7 +203,7 @@ export function AdminUsersPage() {
             <th>Correo</th>
             <th>Rol</th>
             <th>Activo</th>
-            <th></th>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>

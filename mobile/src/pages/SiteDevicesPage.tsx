@@ -1,12 +1,26 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { useClaimDevice, useCreateMyDevice, useSiteDevices } from "../api/hooks";
+import {
+  useClaimDevice,
+  useCreateMyDevice,
+  useSiteDevices,
+  useSwitchDevice,
+  useUnlinkDevice,
+} from "../api/hooks";
 import type { Device } from "../api/types";
+import { notifyError, notifySuccess } from "../lib/errors";
 
 const STALE_AFTER_MS = 2 * 60 * 1000;
 
-function deviceStatus(device: Device): { glow: string; icon: string; label: string } {
+function deviceStatus(
+  device: Device,
+  pendingDesired: "ON" | "OFF" | null,
+): { glow: string; icon: string; label: string } {
+  if (pendingDesired) {
+    return { glow: "#f59e0b", icon: "⏳", label: "Cambiando..." };
+  }
+
   const lastSeen = device.last_seen_at ? new Date(device.last_seen_at).getTime() : null;
   const isOnline = lastSeen !== null && Date.now() - lastSeen < STALE_AFTER_MS;
 
@@ -22,8 +36,48 @@ function deviceStatus(device: Device): { glow: string; icon: string; label: stri
   return { glow: "#38bdf8", icon: "⏻", label: "Apagado" };
 }
 
-function DeviceCard({ device }: { device: Device }) {
-  const status = deviceStatus(device);
+function DeviceCard({ device, siteId }: { device: Device; siteId: number }) {
+  const unlinkDevice = useUnlinkDevice();
+  const switchDevice = useSwitchDevice(device.id);
+  const [confirmingUnlink, setConfirmingUnlink] = useState(false);
+  const [pendingDesired, setPendingDesired] = useState<"ON" | "OFF" | null>(null);
+
+  // Se limpia solo apenas el polling de useSiteDevices trae el
+  // actual_state ya confirmado por el dispositivo real.
+  useEffect(() => {
+    if (pendingDesired && device.actual_state === pendingDesired) {
+      setPendingDesired(null);
+      notifySuccess(pendingDesired === "ON" ? "Dispositivo encendido." : "Dispositivo apagado.");
+    }
+  }, [device.actual_state, pendingDesired]);
+
+  const status = deviceStatus(device, pendingDesired);
+
+  const handleUnlink = async () => {
+    try {
+      await unlinkDevice.mutateAsync({ deviceId: device.id, siteId });
+      notifySuccess("Dispositivo desvinculado.");
+    } catch (error) {
+      notifyError(error, "No se pudo desvincular el dispositivo.");
+      setConfirmingUnlink(false);
+    }
+  };
+
+  const isOn = device.actual_state === "ON";
+
+  const handleToggle = async () => {
+    const target = isOn ? "OFF" : "ON";
+    setPendingDesired(target);
+    try {
+      await switchDevice.mutateAsync(target);
+    } catch (error) {
+      setPendingDesired(null);
+      notifyError(
+        error,
+        "No se pudo cambiar el estado (¿el dispositivo está bloqueado por un evento crítico?).",
+      );
+    }
+  };
 
   return (
     <li className="card site-card" style={{ "--glow": status.glow } as React.CSSProperties}>
@@ -37,6 +91,38 @@ function DeviceCard({ device }: { device: Device }) {
           <span className="site-card-status">{status.label}</span>
         </span>
       </Link>
+
+      <div className="site-card-actions">
+        <button
+          type="button"
+          className="icon-btn"
+          title={isOn ? "Apagar" : "Encender"}
+          onClick={handleToggle}
+          disabled={pendingDesired !== null || (!isOn && device.is_locked_out)}
+        >
+          ⏻
+        </button>
+        {confirmingUnlink ? (
+          <span className="confirm-inline">
+            ¿Desvincular?
+            <button type="button" className="icon-btn danger" onClick={handleUnlink}>
+              Sí
+            </button>
+            <button type="button" className="icon-btn" onClick={() => setConfirmingUnlink(false)}>
+              No
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="icon-btn danger"
+            title="Desvincular del sitio"
+            onClick={() => setConfirmingUnlink(true)}
+          >
+            🔗✕
+          </button>
+        )}
+      </div>
     </li>
   );
 }
@@ -49,12 +135,10 @@ export function SiteDevicesPage() {
   const createDevice = useCreateMyDevice(numericSiteId ?? 0);
 
   const [publicId, setPublicId] = useState("");
-  const [claimError, setClaimError] = useState<string | null>(null);
 
   const [newPublicId, setNewPublicId] = useState("");
   const [newName, setNewName] = useState("");
   const [newMaxCurrent, setNewMaxCurrent] = useState("15");
-  const [createError, setCreateError] = useState<string | null>(null);
   const [lastIssuedSecret, setLastIssuedSecret] = useState<{ public_id: string; secret: string } | null>(
     null,
   );
@@ -62,19 +146,18 @@ export function SiteDevicesPage() {
   const handleClaim = async (event: FormEvent) => {
     event.preventDefault();
     if (!numericSiteId) return;
-    setClaimError(null);
     try {
       await claimDevice.mutateAsync({ public_id: publicId, site_id: numericSiteId });
       setPublicId("");
+      notifySuccess("Dispositivo vinculado.");
     } catch {
-      setClaimError("No se pudo vincular ese dispositivo (¿ya está vinculado o no existe?).");
+      notifyError(null, "No se pudo vincular ese dispositivo (¿ya está vinculado o no existe?).");
     }
   };
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
     if (!numericSiteId) return;
-    setCreateError(null);
     try {
       const created = await createDevice.mutateAsync({
         public_id: newPublicId,
@@ -84,8 +167,9 @@ export function SiteDevicesPage() {
       setLastIssuedSecret({ public_id: created.public_id, secret: created.secret });
       setNewPublicId("");
       setNewName("");
+      notifySuccess("Dispositivo dado de alta.");
     } catch {
-      setCreateError("No se pudo dar de alta el dispositivo (¿ese identificador ya existe?).");
+      notifyError(null, "No se pudo dar de alta el dispositivo (¿ese identificador ya existe?).");
     }
   };
 
@@ -128,7 +212,6 @@ export function SiteDevicesPage() {
             {createDevice.isPending ? "Creando..." : "Dar de alta"}
           </button>
         </form>
-        {createError && <p className="error">{createError}</p>}
       </section>
 
       <section className="card">
@@ -144,7 +227,6 @@ export function SiteDevicesPage() {
             Vincular dispositivo
           </button>
         </form>
-        {claimError && <p className="error">{claimError}</p>}
       </section>
 
       {isLoading && <p>Cargando dispositivos...</p>}
@@ -153,7 +235,7 @@ export function SiteDevicesPage() {
 
       <ul className="list site-list">
         {devices?.map((device) => (
-          <DeviceCard key={device.id} device={device} />
+          <DeviceCard key={device.id} device={device} siteId={numericSiteId as number} />
         ))}
       </ul>
     </div>

@@ -10,7 +10,9 @@ import type {
   DevicePrediction,
   DeviceSelfCreateIn,
   DeviceState,
+  MySite,
   NotificationItem,
+  NotificationPreference,
   Site,
   SiteCreateIn,
   Telemetry,
@@ -20,7 +22,17 @@ import type {
 export function useMySites() {
   return useQuery({
     queryKey: ["sites"],
-    queryFn: async () => (await apiClient.get<Site[]>("/api/v1/app/sites")).data,
+    queryFn: async () => (await apiClient.get<MySite[]>("/api/v1/app/sites")).data,
+  });
+}
+
+export function useLeaveMySite() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (siteId: number) => {
+      await apiClient.delete(`/api/v1/app/sites/${siteId}/membership`);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sites"] }),
   });
 }
 
@@ -61,20 +73,24 @@ export function useCreateMyDevice(siteId: number) {
   });
 }
 
+// El detalle del dispositivo se refresca solo (polling) para reflejar un
+// bloqueo por CRITICAL_OVERLOAD sin que el usuario tenga que recargar —
+// igual que en front/ (etapa 13). Bajado a 2s (14-sep, HIL real) por el
+// mismo motivo que en front/.
+const DEVICE_POLL_INTERVAL_MS = 2000;
+
 export function useSiteDevices(siteId: number | undefined) {
   return useQuery({
     queryKey: ["site-devices", siteId],
     queryFn: async () =>
       (await apiClient.get<Device[]>(`/api/v1/app/sites/${siteId}/devices`)).data,
     enabled: siteId !== undefined,
+    // Mismo motivo que useDevice: sin esto, la tarjeta se queda con el
+    // estado viejo hasta que algo más dispare un refetch, aunque el
+    // dispositivo real ya haya confirmado el cambio.
+    refetchInterval: DEVICE_POLL_INTERVAL_MS,
   });
 }
-
-// El detalle del dispositivo se refresca solo (polling) para reflejar un
-// bloqueo por CRITICAL_OVERLOAD sin que el usuario tenga que recargar —
-// igual que en front/ (etapa 13). Bajado a 2s (14-sep, HIL real) por el
-// mismo motivo que en front/.
-const DEVICE_POLL_INTERVAL_MS = 2000;
 
 export function useDevice(deviceId: number | undefined) {
   return useQuery({
@@ -184,6 +200,7 @@ export function useSwitchDevice(deviceId: number) {
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["device", deviceId] });
+      queryClient.invalidateQueries({ queryKey: ["site-devices"] });
     },
   });
 }
@@ -211,10 +228,45 @@ export function useClaimDevice() {
   });
 }
 
+export function useUnlinkDevice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ deviceId }: { deviceId: number; siteId: number }) =>
+      (await apiClient.post<Device>(`/api/v1/app/devices/${deviceId}/unlink`)).data,
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["site-devices", variables.siteId] });
+    },
+  });
+}
+
 export function useMyNotifications() {
   return useQuery({
     queryKey: ["notifications"],
     queryFn: async () => (await apiClient.get<NotificationItem[]>("/api/v1/app/notifications")).data,
+  });
+}
+
+export function useNotificationPreferences() {
+  return useQuery({
+    queryKey: ["notification-preferences"],
+    queryFn: async () =>
+      (
+        await apiClient.get<NotificationPreference[]>("/api/v1/app/notifications/preferences")
+      ).data,
+  });
+}
+
+export function useSetNotificationPreference() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { channel: string; enabled: boolean }) =>
+      (
+        await apiClient.patch<NotificationPreference>(
+          "/api/v1/app/notifications/preferences",
+          payload,
+        )
+      ).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notification-preferences"] }),
   });
 }
 

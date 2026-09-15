@@ -20,10 +20,8 @@ TEST_USER_B = "app_api_test_b@voltguard.com"
 
 def _cleanup() -> None:
     db = SessionLocal()
-    # Usuarios primero (db.delete() por fila, no en bloque): las
-    # notificaciones de la etapa 10 referencian Event, asi que hay que
-    # borrarlas (via cascada de User.notifications) antes de poder borrar
-    # los Event de mas abajo.
+    # Usuarios primero: sus notificaciones referencian Event y se borran
+    # en cascada antes de poder borrar los Event de mas abajo.
     for email in (TEST_USER_A, TEST_USER_B):
         user = db.query(User).filter(User.email == email).first()
         if user:
@@ -261,6 +259,59 @@ def test_claim_unbound_device_and_reject_double_claim() -> None:
         _cleanup()
 
 
+def test_miembro_del_sitio_puede_desvincular_un_dispositivo() -> None:
+    _cleanup()
+    try:
+        _user_id, token, site_id, device_id = _setup_user_with_site_and_device(
+            TEST_USER_A, TEST_SITE_A, TEST_DEVICE_A
+        )
+
+        unlink_response = client.post(
+            f"/api/v1/app/devices/{device_id}/unlink", headers=_auth_headers(token)
+        )
+        assert unlink_response.status_code == 200
+        assert unlink_response.json()["site_id"] is None
+
+        db = SessionLocal()
+        device = db.query(Device).filter(Device.id == device_id).one()
+        assert device.site_id is None
+        db.close()
+
+        # Un dispositivo desvinculado vuelve a estar disponible para reclamarse.
+        reclaim_response = client.post(
+            "/api/v1/app/devices/claim",
+            headers=_auth_headers(token),
+            json={"public_id": TEST_DEVICE_A, "site_id": site_id},
+        )
+        assert reclaim_response.status_code == 200
+        assert reclaim_response.json()["site_id"] == site_id
+    finally:
+        _cleanup()
+
+
+def test_usuario_ajeno_no_puede_desvincular_un_dispositivo() -> None:
+    _cleanup()
+    try:
+        _user_a, _token_a, _site_a, device_a = _setup_user_with_site_and_device(
+            TEST_USER_A, TEST_SITE_A, TEST_DEVICE_A
+        )
+        _user_b, token_b, _site_b, _device_b = _setup_user_with_site_and_device(
+            TEST_USER_B, TEST_SITE_B, TEST_DEVICE_B
+        )
+
+        response = client.post(
+            f"/api/v1/app/devices/{device_a}/unlink", headers=_auth_headers(token_b)
+        )
+        assert response.status_code == 404
+
+        db = SessionLocal()
+        device = db.query(Device).filter(Device.id == device_a).one()
+        assert device.site_id is not None
+        db.close()
+    finally:
+        _cleanup()
+
+
 def test_read_only_device_endpoints_return_data() -> None:
     _cleanup()
     try:
@@ -295,11 +346,8 @@ def test_read_only_device_endpoints_return_data() -> None:
 
         cost = client.get(f"/api/v1/app/devices/{device_id}/cost", headers=_auth_headers(token))
         assert cost.status_code == 200
-        # Una sola lectura arma un dia (el primero del rango se estima con
-        # su propio maximo-minimo, no se descarta — ver compute_daily_consumption),
-        # pero sin spread dentro del dia el consumo estimado es 0; el
-        # prorrateo de tarifas multi-dia se prueba a fondo en
-        # tests/test_tariffs.py.
+        # Una sola lectura arma un dia sin spread, asi que el consumo
+        # estimado da 0 — el prorrateo multi-dia se prueba en test_tariffs.py.
         assert "total_cost" in cost.json()
         assert cost.json()["days_analyzed"] == 1
         assert cost.json()["total_kwh"] == 0.0
@@ -371,6 +419,15 @@ def test_notification_preferences_upsert() -> None:
     token = create_access_token(subject=str(user_id), role="user")
 
     try:
+        defaults = client.get(
+            "/api/v1/app/notifications/preferences", headers=_auth_headers(token)
+        )
+        assert defaults.status_code == 200
+        assert {p["channel"]: p["enabled"] for p in defaults.json()} == {
+            "in_app": True,
+            "push": False,
+        }
+
         response = client.patch(
             "/api/v1/app/notifications/preferences",
             headers=_auth_headers(token),
@@ -572,6 +629,71 @@ def test_miembro_no_dueno_no_puede_borrar_el_sitio() -> None:
             f"/api/v1/app/sites/{site_id}", headers=_auth_headers(member_token)
         )
         assert delete_response.status_code == 403
+    finally:
+        _cleanup_self_service()
+        db = SessionLocal()
+        db.query(User).filter(User.email == "self_service_member_test@voltguard.com").delete()
+        db.commit()
+        db.close()
+
+
+def test_miembro_puede_salirse_de_un_sitio_por_su_cuenta() -> None:
+    """Es el botón "Desvincular" del acceso de soporte temporal en "Mis
+    sitios" — un admin que se agregó a sí mismo a un sitio ajeno debe poder
+    salir sin necesidad de volver al panel de administración."""
+    _cleanup_self_service()
+    db = SessionLocal()
+    owner = User(email=SELF_SERVICE_USER, hashed_password=get_password_hash("password123"), role="user")
+    member = User(
+        email="self_service_member_test@voltguard.com",
+        hashed_password=get_password_hash("password123"),
+        role="user",
+    )
+    db.add_all([owner, member])
+    db.commit()
+    db.refresh(owner)
+    db.refresh(member)
+
+    site = Site(name=SELF_SERVICE_SITE, kind="casa")
+    db.add(site)
+    db.commit()
+    db.refresh(site)
+    db.add_all(
+        [
+            SiteMember(site_id=site.id, user_id=owner.id, role="owner"),
+            SiteMember(site_id=site.id, user_id=member.id, role="member"),
+        ]
+    )
+    db.commit()
+
+    site_id, member_id = site.id, member.id
+    db.close()
+    member_token = create_access_token(subject=str(member_id), role="user")
+
+    try:
+        leave_response = client.delete(
+            f"/api/v1/app/sites/{site_id}/membership", headers=_auth_headers(member_token)
+        )
+        assert leave_response.status_code == 204
+
+        db = SessionLocal()
+        remaining = (
+            db.query(SiteMember)
+            .filter(SiteMember.site_id == site_id, SiteMember.user_id == member_id)
+            .first()
+        )
+        assert remaining is None
+        # El sitio y el dueño siguen intactos — solo se fue el miembro.
+        assert db.query(Site).filter(Site.id == site_id).first() is not None
+        db.close()
+
+        # Salir de nuevo (ya no es miembro) debe fallar con 403, no 204 en
+        # silencio — get_current_site_member ya no lo reconoce como
+        # miembro de ese sitio.
+        second_leave = client.delete(
+            f"/api/v1/app/sites/{site_id}/membership", headers=_auth_headers(member_token)
+        )
+        assert second_leave.status_code == 403
     finally:
         _cleanup_self_service()
         db = SessionLocal()

@@ -156,12 +156,9 @@ def compute_hourly_consumption(
     return [(hour, round(wh / 1000.0, 4)) for hour, wh in hourly_wh]
 
 
-# Antes de sincronizar por NTP, el firmware reporta timestamps desde epoch
-# (ver ino/iot_client.cpp: MIN_PLAUSIBLE_EPOCH) — esas lecturas quedan
-# fuera de cualquier ventana de días razonable así que no afectan
-# `compute_daily_consumption`, pero `get_first_telemetry_date` no tiene
-# ventana y las tomaría como si fueran la primera lectura real (bug
-# observado: earliest_date="1970-01-01" en vez de la fecha real).
+# Antes de sincronizar por NTP el firmware reporta timestamps desde epoch
+# — sin este filtro, get_first_telemetry_date las toma como la primera
+# lectura real y devuelve "1970-01-01" en vez de la fecha correcta.
 MIN_PLAUSIBLE_TELEMETRY_AT = datetime(2020, 1, 1, tzinfo=UTC)
 
 
@@ -287,6 +284,19 @@ def claim_device(db: Session, device: Device, site_id: int) -> Device:
             detail="El dispositivo ya está vinculado a un sitio.",
         )
     device.site_id = site_id
+    db.commit()
+    db.refresh(device)
+    return device
+
+
+def unlink_device(db: Session, device: Device) -> Device:
+    """Contraparte de `claim_device`: desvincula un dispositivo de su sitio
+    actual (`site_id = None`), disponible para cualquier miembro del sitio
+    (autorización ya validada por `get_authorized_device` en el router, no
+    acá). Es la vía que le permite a un usuario común liberar un
+    dispositivo sin depender de un admin — antes de esto, solo existía la
+    reasignación administrativa (`admin_reassign_device`)."""
+    device.site_id = None
     db.commit()
     db.refresh(device)
     return device

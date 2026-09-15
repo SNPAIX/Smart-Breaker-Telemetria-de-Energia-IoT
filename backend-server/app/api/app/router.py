@@ -32,6 +32,7 @@ from app.schemas.app_api import (
     DeviceSelfCreateIn,
     DeviceStateOut,
     EventOut,
+    MySiteOut,
     NotificationOut,
     NotificationPreferenceIn,
     NotificationPreferenceOut,
@@ -54,8 +55,9 @@ from app.services.devices import (
     list_recent_telemetry,
     reactivate_device,
     switch_device,
+    unlink_device,
 )
-from app.services.notifications import notify_event_by_id
+from app.services.notifications import get_notification_preferences, notify_event_by_id
 from app.services.predictions import get_or_generate_prediction
 from app.services.push import push_command_to_device
 from app.services.sites import (
@@ -64,18 +66,19 @@ from app.services.sites import (
     delete_site,
     get_site_or_404,
     list_site_devices,
-    list_user_sites,
+    list_user_sites_with_role,
+    remove_site_member,
     update_site,
 )
 
 router = APIRouter(prefix="/api/v1/app", tags=["App (usuario final)"])
 
 
-@router.get("/sites", response_model=list[SiteOut])
+@router.get("/sites", response_model=list[MySiteOut])
 def get_my_sites(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
-) -> list[Site]:
-    return list_user_sites(db, current_user.id)
+) -> list[dict]:
+    return list_user_sites_with_role(db, current_user.id)
 
 
 @router.post("/sites", response_model=SiteOut, status_code=status.HTTP_201_CREATED)
@@ -125,6 +128,22 @@ def delete_my_site(
         )
     site = get_site_or_404(db, site_id)
     delete_site(db, site)
+
+
+@router.delete("/sites/{site_id}/membership", status_code=status.HTTP_204_NO_CONTENT)
+def leave_my_site(
+    site_id: int,
+    current_user: User = Depends(get_current_user),
+    membership: SiteMember = Depends(get_current_site_member),
+    db: Session = Depends(get_db),
+) -> None:
+    """Salida propia de un sitio — nunca de otro usuario (eso sigue siendo
+    exclusivo del admin, ver /api/v1/admin/sites/{id}/members/{user_id}).
+    Es lo que usa el botón "Desvincular" del acceso de soporte temporal en
+    "Mis sitios": un admin que se agregó a sí mismo puede salir sin tener
+    que volver al panel de administración."""
+    del membership  # solo valida que efectivamente pertenece al sitio
+    remove_site_member(db, site_id, current_user.id)
 
 
 @router.post("/sites/{site_id}/devices", response_model=DeviceCreateOut, status_code=status.HTTP_201_CREATED)
@@ -182,7 +201,7 @@ def claim_a_device(
     )
     if membership is None:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="No perteneces a este sitio."
+            status_code=status.HTTP_403_FORBIDDEN, detail="El usuario no pertenece a este sitio."
         )
 
     device = db.query(Device).filter(Device.public_id == payload.public_id).first()
@@ -192,6 +211,18 @@ def claim_a_device(
         )
 
     return claim_device(db, device, payload.site_id)
+
+
+@router.post("/devices/{device_id}/unlink", response_model=DeviceOut)
+def unlink_a_device(
+    device: Device = Depends(get_authorized_device), db: Session = Depends(get_db)
+) -> Device:
+    """Contraparte de `/devices/claim`: cualquier miembro del sitio actual
+    del dispositivo puede desvincularlo (vuelve a quedar sin sitio, listo
+    para que alguien lo reclame de nuevo). `get_authorized_device` ya
+    confirma la membresía — sin este endpoint, la única forma de
+    desvincular un dispositivo era a través de un admin."""
+    return unlink_device(db, device)
 
 
 @router.get("/devices/{device_id}", response_model=DeviceOut)
@@ -331,10 +362,8 @@ def switch(
     db: Session = Depends(get_db),
 ) -> DeviceStateOut:
     command = switch_device(db, device, payload.desired_state)
-    # Empuja el comando por el WebSocket del dispositivo si tiene una
-    # conexión abierta ahora mismo — acelera la entrega a milisegundos en
-    # vez de depender de la próxima telemetría o del poll de respaldo (que
-    # de todas formas sigue funcionando si el socket no está disponible).
+    # Empuja el comando por WebSocket si hay conexión abierta; si no, el
+    # poll de respaldo lo entrega igual en el próximo ciclo.
     background_tasks.add_task(
         push_command_to_device, device.id, CommandOut.model_validate(command).model_dump()
     )
@@ -376,6 +405,13 @@ def get_my_notifications(
         .order_by(Notification.created_at.desc())
         .all()
     )
+
+
+@router.get("/notifications/preferences", response_model=list[NotificationPreferenceOut])
+def get_my_notification_preferences(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> list[dict[str, bool | str]]:
+    return get_notification_preferences(db, current_user.id)
 
 
 @router.patch("/notifications/preferences", response_model=NotificationPreferenceOut)

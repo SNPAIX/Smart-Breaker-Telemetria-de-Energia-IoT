@@ -16,6 +16,7 @@ from app.models.entities import (
 from app.schemas.admin_api import (
     AdminEventOut,
     AdminOverviewOut,
+    AdminSiteOut,
     DeviceCreateIn,
     DeviceCreateOut,
     DeviceReassignIn,
@@ -33,6 +34,7 @@ from app.schemas.admin_api import (
     TariffCreateIn,
     TariffOut,
     UserCreateIn,
+    UserDeletionImpactOut,
     UserOut,
     UserUpdateIn,
 )
@@ -64,7 +66,7 @@ from app.services.sites import (
     create_site,
     delete_site,
     get_site_or_404,
-    list_all_sites,
+    list_all_sites_with_owner,
     list_site_members,
     remove_site_member,
     update_site,
@@ -75,6 +77,7 @@ from app.services.users import (
     delete_user,
     get_user_or_404,
     list_users,
+    preview_user_deletion_impact,
     update_user,
 )
 
@@ -107,9 +110,19 @@ def admin_update_user(user_id: int, payload: UserUpdateIn, db: Session = Depends
     return update_user(db, user, role=payload.role, is_active=payload.is_active)
 
 
+@router.get("/users/{user_id}/deletion-impact", response_model=UserDeletionImpactOut)
+def admin_preview_user_deletion(user_id: int, db: Session = Depends(get_db)) -> dict:
+    get_user_or_404(db, user_id)
+    return {"orphaned_sites": preview_user_deletion_impact(db, user_id)}
+
+
 @router.delete("/users/{user_id}", status_code=204)
-def admin_delete_user(user_id: int, db: Session = Depends(get_db)) -> None:
-    delete_user(db, get_user_or_404(db, user_id))
+def admin_delete_user(
+    user_id: int, delete_orphaned_sites: bool = False, db: Session = Depends(get_db)
+) -> None:
+    delete_user(
+        db, get_user_or_404(db, user_id), delete_orphaned_sites=delete_orphaned_sites
+    )
 
 
 # --- Sitios ---
@@ -118,9 +131,11 @@ def admin_create_site(payload: SiteCreateIn, db: Session = Depends(get_db)) -> S
     return create_site(db, name=payload.name, kind=payload.kind)
 
 
-@router.get("/sites", response_model=list[SiteOut])
-def admin_list_sites(db: Session = Depends(get_db)) -> list[Site]:
-    return list_all_sites(db)
+@router.get("/sites", response_model=list[AdminSiteOut])
+def admin_list_sites(
+    db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)
+) -> list[dict]:
+    return list_all_sites_with_owner(db, admin_user_id=current_admin.id)
 
 
 @router.get("/sites/{site_id}", response_model=SiteOut)

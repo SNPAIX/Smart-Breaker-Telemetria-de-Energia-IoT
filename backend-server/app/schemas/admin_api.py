@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from app.schemas.app_api import SiteOut
+
 
 class UserOut(BaseModel):
     id: int
@@ -37,6 +39,31 @@ class SiteUpdateIn(BaseModel):
 class SiteMemberIn(BaseModel):
     user_id: int
     role: str = "member"
+
+
+class OrphanedSiteOut(BaseModel):
+    id: int
+    name: str
+    device_count: int
+
+
+class UserDeletionImpactOut(BaseModel):
+    """Vista previa de qué pasaría si se borra este usuario — se consulta
+    ANTES de confirmar el borrado, nunca bloquea nada por sí sola."""
+
+    orphaned_sites: list[OrphanedSiteOut]
+
+
+class AdminSiteOut(SiteOut):
+    """`SiteOut` normal más el dueño real del sitio — sin esto, la tabla de
+    admin muestra todos los sitios de la plataforma mezclados sin forma de
+    saber de quién es cada uno (un admin da soporte sobre el sitio de un
+    usuario, nunca es "su" sitio). `admin_is_member` marca si el admin que
+    pide la lista está vinculado ahora mismo a ese sitio (acceso temporal
+    de soporte), para que la tabla lo muestre sin abrir cada fila."""
+
+    owner_email: str | None = None
+    admin_is_member: bool = False
 
 
 class SiteMemberOut(BaseModel):

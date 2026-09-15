@@ -12,6 +12,16 @@ class SiteOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MySiteOut(SiteOut):
+    """`SiteOut` normal más el rol propio del usuario en ese sitio y el
+    correo del dueño real — "Mis sitios" necesita distinguir a primera
+    vista si el usuario es dueño, invitado, o (si es admin) está ahí de
+    soporte temporal, sin tener que adivinarlo ni abrir nada."""
+
+    my_role: Literal["owner", "member"]
+    owner_email: str | None = None
+
+
 class DeviceOut(BaseModel):
     id: int
     public_id: str

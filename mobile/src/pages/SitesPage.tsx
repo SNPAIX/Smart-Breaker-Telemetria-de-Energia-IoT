@@ -1,24 +1,50 @@
-import { isAxiosError } from "axios";
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
-import { useCreateMySite, useDeleteMySite, useMySites, useRenameMySite } from "../api/hooks";
-import type { Site } from "../api/types";
+import {
+  useCreateMySite,
+  useDeleteMySite,
+  useLeaveMySite,
+  useMySites,
+  useRenameMySite,
+} from "../api/hooks";
+import type { MySite } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
+import { notifyError, notifySuccess } from "../lib/errors";
 
-function extractErrorDetail(error: unknown, fallback: string): string {
-  if (isAxiosError(error) && typeof error.response?.data?.detail === "string") {
-    return error.response.data.detail;
+function OwnershipChip({ isSupportAccess, site }: { isSupportAccess: boolean; site: MySite }) {
+  if (site.my_role === "owner") {
+    return <span className="tag">Dueño</span>;
   }
-  return fallback;
+  if (isSupportAccess) {
+    return <span className="tag tag-danger">Soporte temporal</span>;
+  }
+  return (
+    <span className="tag" title={site.owner_email ?? undefined}>
+      Invitado{site.owner_email ? ` de ${site.owner_email}` : ""}
+    </span>
+  );
 }
 
-function SiteCard({ site }: { site: Site }) {
+function SiteCard({ site }: { site: MySite }) {
+  const { user } = useAuth();
   const renameSite = useRenameMySite();
   const deleteSite = useDeleteMySite();
+  const leaveSite = useLeaveMySite();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(site.name);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const isSupportAccess = user?.role === "admin" && site.my_role !== "owner";
+
+  const handleLeave = async () => {
+    try {
+      await leaveSite.mutateAsync(site.id);
+      notifySuccess("Te desvinculaste de este sitio.");
+    } catch (error) {
+      notifyError(error, "No se pudo desvincular.");
+    }
+  };
 
   const handleRename = async (event: FormEvent) => {
     event.preventDefault();
@@ -27,16 +53,20 @@ function SiteCard({ site }: { site: Site }) {
       setName(site.name);
       return;
     }
-    await renameSite.mutateAsync({ siteId: site.id, name: name.trim() });
-    setEditing(false);
+    try {
+      await renameSite.mutateAsync({ siteId: site.id, name: name.trim() });
+      setEditing(false);
+    } catch (error) {
+      notifyError(error, "No se pudo renombrar el sitio.");
+    }
   };
 
   const handleDelete = async () => {
-    setErrorMessage(null);
     try {
       await deleteSite.mutateAsync(site.id);
+      notifySuccess("Sitio eliminado.");
     } catch (error) {
-      setErrorMessage(extractErrorDetail(error, "No se pudo eliminar el sitio."));
+      notifyError(error, "No se pudo eliminar el sitio.");
       setConfirmingDelete(false);
     }
   };
@@ -67,12 +97,26 @@ function SiteCard({ site }: { site: Site }) {
           </span>
           <span className="site-card-text">
             <span className="site-card-name">{site.name}</span>
-            <span className="tag">{site.kind}</span>
+            <span style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+              <span className="tag">{site.kind}</span>
+              <OwnershipChip site={site} isSupportAccess={isSupportAccess} />
+            </span>
           </span>
         </Link>
       )}
 
       <div className="site-card-actions">
+        {isSupportAccess && (
+          <button
+            type="button"
+            className="icon-btn danger"
+            title="Desvincularme (soporte temporal)"
+            onClick={handleLeave}
+            disabled={leaveSite.isPending}
+          >
+            🚪
+          </button>
+        )}
         {!editing && (
           <button
             type="button"
@@ -104,7 +148,6 @@ function SiteCard({ site }: { site: Site }) {
           </button>
         )}
       </div>
-      {errorMessage && <p className="error site-card-error">{errorMessage}</p>}
     </li>
   );
 }
@@ -114,16 +157,15 @@ export function SitesPage() {
   const createSite = useCreateMySite();
   const [name, setName] = useState("");
   const [kind, setKind] = useState("casa");
-  const [error, setError] = useState<string | null>(null);
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
-    setError(null);
     try {
       await createSite.mutateAsync({ name, kind });
       setName("");
+      notifySuccess("Sitio creado.");
     } catch (err) {
-      setError(extractErrorDetail(err, "No se pudo crear el sitio."));
+      notifyError(err, "No se pudo crear el sitio.");
     }
   };
 
@@ -148,7 +190,6 @@ export function SitesPage() {
           {createSite.isPending ? "Creando..." : "Crear sitio"}
         </button>
       </form>
-      {error && <p className="error">{error}</p>}
 
       {isLoading && <p>Cargando sitios...</p>}
       {isError && <p className="error">No se pudieron cargar los sitios.</p>}

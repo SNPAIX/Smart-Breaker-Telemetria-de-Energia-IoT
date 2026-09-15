@@ -14,8 +14,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/
@@ -266,3 +264,14 @@ ios/
 # Configuración local de herramientas de asistencia (no se versiona)
 # ============================================================
 /.claude/
+/docs/claude/
+
+# ============================================================
+# Documentos generados (reportes, propuestas) — quedan solo en local
+# ============================================================
+*.pdf
+
+# ============================================================
+# Scratch temporal de sesiones de asistencia (uso local, no se versiona)
+# ============================================================
+/tmp/
