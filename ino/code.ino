@@ -177,10 +177,10 @@ void setup()
 
 void loop()
 {
-    // Etapa 12: reemplaza el bloque de demostracion (alternar el rele cada
-    // 10s) por la orquestacion real de aprovisionamiento/red. La lectura
-    // del PZEM y el corte critico local NO dependen de este loop — ya
-    // corrieron de forma sincrona dentro del callback (ver arriba).
+    // Etapa 12: reemplazar el bloque de demostracion (alternar el rele
+    // cada 10s) por la orquestacion real de aprovisionamiento/red. La
+    // lectura del PZEM y el corte critico local NO dependen de este loop
+    // — ya corren de forma sincrona dentro del callback (ver arriba).
     provisioningLoop();
     iotClientLoop();
 
