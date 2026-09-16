@@ -164,14 +164,14 @@ class DeviceStateOut(BaseModel):
 class ConsumptionPointOut(BaseModel):
     period: str = Field(
         description='"YYYY-MM-DD" si granularity="day", "YYYY-MM" si "month", '
-        '"YYYY-MM-DDTHH" si "hour".'
+        '"YYYY-MM-DDTHH" si "hour", "YYYY-MM-DDTHH:MM" si "minute".'
     )
     kwh: float
 
 
 class DeviceConsumptionOut(BaseModel):
     device_id: int
-    granularity: Literal["hour", "day", "month"]
+    granularity: Literal["minute", "hour", "day", "month"]
     points: list[ConsumptionPointOut]
     earliest_date: str | None = Field(
         default=None,

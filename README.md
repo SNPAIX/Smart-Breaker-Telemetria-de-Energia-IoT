@@ -46,7 +46,9 @@ flowchart LR
         mobile["App móvil (mobile/)"]
     end
 
-    voice["Asistente de voz\n(IA-Assistant/, opcional)"]
+    subgraph assistant["Módulo Asistente IA"]
+        voice["Asistente de voz\n(IA-Assistant/, opcional)"]
+    end
 
     mcu -- "REST: telemetría\ny estado" --> api
     api -- "WebSocket: comandos\nencender/apagar" --> mcu

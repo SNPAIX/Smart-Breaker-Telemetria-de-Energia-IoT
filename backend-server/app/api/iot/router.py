@@ -1,5 +1,12 @@
 from datetime import UTC, datetime, timedelta
 
+# Piso de plausibilidad para el reloj del dispositivo: antes de sincronizar
+# por NTP tras un reinicio, el ESP32 puede mandar telemetria real con
+# timestamp en epoca cero (1970), lo que rompe cualquier grafica ordenada
+# por tiempo. MIN_PLAUSIBLE_TIMESTAMP descarta esos valores en favor de la
+# hora del propio servidor, sin bloquear la lectura.
+MIN_PLAUSIBLE_TIMESTAMP = datetime(2024, 1, 1, tzinfo=UTC)
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -149,6 +156,14 @@ def receive_telemetry(
             },
         )
 
+    recorded_at = payload.timestamp
+    if recorded_at < MIN_PLAUSIBLE_TIMESTAMP:
+        logger.warning(
+            "telemetry_timestamp_implausible",
+            extra={"device_id": device.id, "sequence": payload.sequence, "timestamp": str(recorded_at)},
+        )
+        recorded_at = received_at
+
     reading = TelemetryReading(
         device_id=device.id,
         sequence=payload.sequence,
@@ -158,7 +173,7 @@ def receive_telemetry(
         frequency=payload.frequency_hz,
         power_factor=payload.power_factor,
         energy=payload.energy_kwh,
-        recorded_at=payload.timestamp,
+        recorded_at=recorded_at,
     )
     db.add(reading)
     device.last_seen_at = datetime.now(UTC)

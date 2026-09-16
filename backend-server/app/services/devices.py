@@ -156,6 +156,33 @@ def compute_hourly_consumption(
     return [(hour, round(wh / 1000.0, 4)) for hour, wh in hourly_wh]
 
 
+def compute_minutely_consumption(
+    db: Session, device_id: int, day: datetime
+) -> list[tuple[str, float]]:
+    """Igual que `compute_hourly_consumption`, con el bucket en minuto en
+    vez de hora — vista "Hoy" con más resolución cuando la telemetría del
+    dispositivo llega varias veces por segundo y un solo punto por hora
+    se ve demasiado espaciado. Devuelve [("YYYY-MM-DDTHH:MM", kwh), ...]
+    ya ordenado."""
+    day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1, microseconds=-1)
+    readings = (
+        db.query(TelemetryReading)
+        .filter(
+            TelemetryReading.device_id == device_id,
+            TelemetryReading.recorded_at >= day_start,
+            TelemetryReading.recorded_at <= day_end,
+        )
+        .order_by(TelemetryReading.recorded_at.asc())
+        .all()
+    )
+
+    minutely_wh = _compute_bucketed_consumption(
+        readings, lambda r: r.recorded_at.strftime("%Y-%m-%dT%H:%M")
+    )
+    return [(minute, round(wh / 1000.0, 4)) for minute, wh in minutely_wh]
+
+
 # Antes de sincronizar por NTP el firmware reporta timestamps desde epoch
 # — sin este filtro, get_first_telemetry_date las toma como la primera
 # lectura real y devuelve "1970-01-01" en vez de la fecha correcta.

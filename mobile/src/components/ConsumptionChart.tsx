@@ -11,7 +11,7 @@ import {
 
 import { useDeviceConsumption, type ConsumptionRangeParams } from "../api/hooks";
 
-type Granularity = "hour" | "day" | "month";
+type Granularity = "minute" | "hour" | "day" | "month";
 
 type RangeOption = {
   label: string;
@@ -22,6 +22,7 @@ type RangeOption = {
 
 const RANGE_OPTIONS: RangeOption[] = [
   { label: "Hoy", granularity: "hour" },
+  { label: "Hoy (min)", granularity: "minute" },
   { label: "7 días", days: 7, granularity: "day" },
   { label: "30 días", days: 30, granularity: "day" },
   { label: "12 meses", days: 365, granularity: "month" },
@@ -36,13 +37,14 @@ function formatPeriod(period: string, granularity: Granularity): string {
       year: "2-digit",
     });
   }
-  if (granularity === "hour") {
-    // El backend agrupa por hora UTC ("YYYY-MM-DDTHH") — convertir a hora
-    // local antes de mostrarla, si no la gráfica queda desfasada varias
-    // horas contra el reloj real del usuario.
-    const [datePart, hourPart] = period.split("T");
+  if (granularity === "hour" || granularity === "minute") {
+    // El backend agrupa por hora/minuto UTC ("YYYY-MM-DDTHH[:MM]") —
+    // convertir a hora local antes de mostrarla, si no la gráfica queda
+    // desfasada varias horas contra el reloj real del usuario.
+    const [datePart, timePart] = period.split("T");
     const [year, month, day] = datePart.split("-").map(Number);
-    const localDate = new Date(Date.UTC(year, month - 1, day, Number(hourPart)));
+    const [hour, minute] = timePart.split(":").map(Number);
+    const localDate = new Date(Date.UTC(year, month - 1, day, hour, minute || 0));
     return localDate.toLocaleTimeString(undefined, {
       hour: "2-digit",
       minute: "2-digit",
@@ -133,7 +135,7 @@ export function ConsumptionChart({ deviceId }: { deviceId: number | undefined })
         <p>Cargando consumo...</p>
       ) : chartData.length === 0 ? (
         <p>
-          {selected.granularity === "hour"
+          {selected.granularity === "hour" || selected.granularity === "minute"
             ? "Todavía no hay lecturas registradas hoy."
             : "Sin lecturas registradas en este período."}
         </p>

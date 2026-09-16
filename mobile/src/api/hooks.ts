@@ -138,7 +138,7 @@ export function useDeviceCost(deviceId: number | undefined) {
 }
 
 export interface ConsumptionRangeParams {
-  granularity: "hour" | "day" | "month";
+  granularity: "minute" | "hour" | "day" | "month";
   // Rango preestablecido (últimos N días) o personalizado (start/end,
   // "YYYY-MM-DD") — se manda uno u otro, nunca los dos (ver ConsumptionChart).
   days?: number;
@@ -149,9 +149,9 @@ export interface ConsumptionRangeParams {
 // Consumo/costo no necesitan la frescura de la telemetria/estado (por eso
 // no van por el WebSocket de notificaciones, que es para eventos puntuales,
 // no para un agregado que cambia con cada lectura) pero sí deben reflejar
-// lecturas nuevas sin que el usuario tenga que recargar la pantalla. La
-// vista "hoy, por hora" sí se beneficia de refrescar más seguido — es la
-// que el usuario mira mientras el consumo va llegando en vivo.
+// lecturas nuevas sin que el usuario tenga que recargar la pantalla. Las
+// vistas "hoy" (minuto/hora) sí se benefician de refrescar más seguido —
+// son las que el usuario mira mientras el consumo va llegando en vivo.
 const CONSUMPTION_POLL_INTERVAL_MS = 15000;
 const HOURLY_CONSUMPTION_POLL_INTERVAL_MS = 5000;
 
@@ -169,7 +169,9 @@ export function useDeviceConsumption(
   return useQuery({
     queryKey: ["device-consumption", deviceId, granularity, days, start, end],
     refetchInterval:
-      granularity === "hour" ? HOURLY_CONSUMPTION_POLL_INTERVAL_MS : CONSUMPTION_POLL_INTERVAL_MS,
+      granularity === "minute" || granularity === "hour"
+        ? HOURLY_CONSUMPTION_POLL_INTERVAL_MS
+        : CONSUMPTION_POLL_INTERVAL_MS,
     queryFn: async () =>
       (
         await apiClient.get<DeviceConsumption>(

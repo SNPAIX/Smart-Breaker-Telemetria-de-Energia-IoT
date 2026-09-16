@@ -48,6 +48,7 @@ from app.services.devices import (
     claim_device,
     compute_daily_consumption_wh,
     compute_hourly_consumption,
+    compute_minutely_consumption,
     create_device,
     get_consumption_series,
     get_first_telemetry_date,
@@ -298,21 +299,27 @@ def get_device_consumption(
     vez de `days` — para el selector de fecha, `earliest_date` en la
     respuesta es el límite inferior real (la primera lectura que existe).
 
-    `granularity="hour"` es la vista "hoy, trazado a lo largo del día" —
-    ignora `days`/`start`/`end` y siempre usa el día calendario UTC actual
-    (ver `compute_hourly_consumption`)."""
-    if granularity not in ("hour", "day", "month"):
+    `granularity="hour"`/`"minute"` son la vista "hoy, trazado a lo largo
+    del día" — ignoran `days`/`start`/`end` y siempre usan el día
+    calendario UTC actual (ver `compute_hourly_consumption`/
+    `compute_minutely_consumption`); `"minute"` da más resolución cuando
+    la telemetría del dispositivo llega varias veces por segundo."""
+    if granularity not in ("minute", "hour", "day", "month"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail='granularity debe ser "hour", "day" o "month".',
+            detail='granularity debe ser "minute", "hour", "day" o "month".',
         )
 
-    if granularity == "hour":
-        hourly = compute_hourly_consumption(db, device.id, datetime.now(UTC))
+    if granularity in ("minute", "hour"):
+        points = (
+            compute_minutely_consumption(db, device.id, datetime.now(UTC))
+            if granularity == "minute"
+            else compute_hourly_consumption(db, device.id, datetime.now(UTC))
+        )
         return DeviceConsumptionOut(
             device_id=device.id,
-            granularity="hour",
-            points=[ConsumptionPointOut(period=period, kwh=kwh) for period, kwh in hourly],
+            granularity=granularity,
+            points=[ConsumptionPointOut(period=period, kwh=kwh) for period, kwh in points],
             earliest_date=get_first_telemetry_date(db, device.id),
         )
 

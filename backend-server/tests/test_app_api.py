@@ -407,6 +407,51 @@ def test_consumption_hourly_traza_el_dia_actual() -> None:
         _cleanup()
 
 
+def test_consumption_por_minuto_da_mas_resolucion_que_por_hora() -> None:
+    """granularity=minute (agregado 15-sep) resuelve la misma vista "hoy"
+    con bucket de minuto en vez de hora — necesaria porque la telemetria
+    real llega varias veces por segundo y un solo punto por hora se ve
+    demasiado espaciado en la grafica."""
+    from datetime import UTC, datetime
+
+    _cleanup()
+    try:
+        _user_id, token, _site_id, device_id = _setup_user_with_site_and_device(
+            TEST_USER_A, TEST_SITE_A, TEST_DEVICE_A
+        )
+
+        db = SessionLocal()
+        device = db.query(Device).filter(Device.id == device_id).one()
+        secret = issue_device_credential(device)
+        db.commit()
+        db.close()
+
+        sim = DeviceSimulator(client=client, public_id=TEST_DEVICE_A, secret=secret)
+        now = datetime.now(UTC)
+        minute_0 = now.replace(minute=0, second=0, microsecond=0)
+        minute_1 = minute_0.replace(minute=minute_0.minute + 1) if minute_0.minute < 59 else minute_0
+        for sequence, (timestamp, energy) in enumerate(
+            [(minute_0, 0.0), (minute_0, 0.2), (minute_1, 0.6)], start=1
+        ):
+            response = sim.send_telemetry(sequence=sequence, energy_kwh=energy, timestamp=timestamp)
+            assert response.status_code == 200
+
+        result = client.get(
+            f"/api/v1/app/devices/{device_id}/consumption?granularity=minute",
+            headers=_auth_headers(token),
+        )
+        assert result.status_code == 200
+        body = result.json()
+        assert body["granularity"] == "minute"
+        assert len(body["points"]) >= 1
+        total_kwh = sum(point["kwh"] for point in body["points"])
+        assert total_kwh > 0
+        for point in body["points"]:
+            assert len(point["period"]) == 16  # "YYYY-MM-DDTHH:MM"
+    finally:
+        _cleanup()
+
+
 def test_notification_preferences_upsert() -> None:
     _cleanup()
     db = SessionLocal()

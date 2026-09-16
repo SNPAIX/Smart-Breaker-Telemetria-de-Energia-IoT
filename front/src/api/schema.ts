@@ -702,9 +702,11 @@ export interface paths {
          *     vez de `days` — para el selector de fecha, `earliest_date` en la
          *     respuesta es el límite inferior real (la primera lectura que existe).
          *
-         *     `granularity="hour"` es la vista "hoy, trazado a lo largo del día" —
-         *     ignora `days`/`start`/`end` y siempre usa el día calendario UTC actual
-         *     (ver `compute_hourly_consumption`).
+         *     `granularity="hour"`/`"minute"` son la vista "hoy, trazado a lo largo
+         *     del día" — ignoran `days`/`start`/`end` y siempre usan el día
+         *     calendario UTC actual (ver `compute_hourly_consumption`/
+         *     `compute_minutely_consumption`); `"minute"` da más resolución cuando
+         *     la telemetría del dispositivo llega varias veces por segundo.
          */
         get: operations["get_device_consumption_api_v1_app_devices__device_id__consumption_get"];
         put?: never;
@@ -964,7 +966,7 @@ export interface components {
         ConsumptionPointOut: {
             /**
              * Period
-             * @description "YYYY-MM-DD" si granularity="day", "YYYY-MM" si "month", "YYYY-MM-DDTHH" si "hour".
+             * @description "YYYY-MM-DD" si granularity="day", "YYYY-MM" si "month", "YYYY-MM-DDTHH" si "hour", "YYYY-MM-DDTHH:MM" si "minute".
              */
             period: string;
             /** Kwh */
@@ -978,7 +980,7 @@ export interface components {
              * Granularity
              * @enum {string}
              */
-            granularity: "hour" | "day" | "month";
+            granularity: "minute" | "hour" | "day" | "month";
             /** Points */
             points: components["schemas"]["ConsumptionPointOut"][];
             /**
