@@ -5,9 +5,9 @@ esta lógica, solo exponerla vía rutas delgadas con su propia autorización.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
-from typing import Callable
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session

@@ -13,6 +13,10 @@ ignore = [
     "EXE002", # El bit de ejecutable no es fiable en un bind-mount desde Windows;
               # el modo real que importa es el que trackea git (100644), no el
               # que reporta el filesystem del host durante desarrollo local.
+    "BLE001", # `except Exception` intencional: enviar por un WebSocket sin que
+              # un cliente muerto tumbe el envío a los demás (ws_manager.py), y
+              # verificar en tests el cierre de conexión que Starlette expone
+              # sin un tipo de excepción único y estable entre versiones.
 ]
 
 [tool.mypy]

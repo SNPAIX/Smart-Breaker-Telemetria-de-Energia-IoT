@@ -8,12 +8,11 @@ ejecuta la acción con los mismos servicios que ya usa `/api/v1/app`."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-
 from ia_assistant.llm_fallback import IIntentEngine, build_default_engine
 from ia_assistant.orchestrator import resolve_voice_command
 from ia_assistant.responder import build_spoken_text
 from ia_assistant.schemas import DeviceRef, ExecutionOutcome, IntentType
+from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.dependencies import get_current_user

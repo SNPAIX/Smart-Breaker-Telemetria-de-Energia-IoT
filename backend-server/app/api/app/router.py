@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -78,7 +79,7 @@ router = APIRouter(prefix="/api/v1/app", tags=["App (usuario final)"])
 @router.get("/sites", response_model=list[MySiteOut])
 def get_my_sites(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
-) -> list[dict]:
+) -> list[dict[str, object]]:
     return list_user_sites_with_role(db, current_user.id)
 
 
@@ -284,7 +285,7 @@ def get_device_cost(
 @router.get("/devices/{device_id}/consumption", response_model=DeviceConsumptionOut)
 def get_device_consumption(
     days: int = 30,
-    granularity: str = "day",
+    granularity: Literal["minute", "hour", "day", "month"] = "day",
     start: str | None = None,
     end: str | None = None,
     device: Device = Depends(get_authorized_device),
@@ -304,12 +305,6 @@ def get_device_consumption(
     calendario UTC actual (ver `compute_hourly_consumption`/
     `compute_minutely_consumption`); `"minute"` da más resolución cuando
     la telemetría del dispositivo llega varias veces por segundo."""
-    if granularity not in ("minute", "hour", "day", "month"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='granularity debe ser "minute", "hour", "day" o "month".',
-        )
-
     if granularity in ("minute", "hour"):
         points = (
             compute_minutely_consumption(db, device.id, datetime.now(UTC))

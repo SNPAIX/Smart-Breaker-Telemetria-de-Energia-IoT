@@ -17,7 +17,7 @@ def list_user_sites(db: Session, user_id: int) -> list[Site]:
     )
 
 
-def list_user_sites_with_role(db: Session, user_id: int) -> list[dict]:
+def list_user_sites_with_role(db: Session, user_id: int) -> list[dict[str, object]]:
     """Igual que `list_user_sites`, pero con el rol propio (`owner` o
     `member`) y el correo del dueño real resueltos para cada sitio — "Mis
     sitios" necesita mostrar a primera vista si el usuario es dueño de ese
@@ -33,12 +33,13 @@ def list_user_sites_with_role(db: Session, user_id: int) -> list[dict]:
     )
     if not rows:
         return []
-    owner_emails: dict[int, str] = dict(
-        db.query(SiteMember.site_id, User.email)
+    owner_emails: dict[int, str] = {
+        site_id: email
+        for site_id, email in db.query(SiteMember.site_id, User.email)
         .join(User, User.id == SiteMember.user_id)
         .filter(SiteMember.role == "owner", SiteMember.site_id.in_([site.id for site, _ in rows]))
         .all()
-    )
+    }
     return [
         {
             "id": site.id,
@@ -81,7 +82,7 @@ def list_all_sites(db: Session) -> list[Site]:
     return db.query(Site).order_by(Site.id.asc()).all()
 
 
-def list_all_sites_with_owner(db: Session, *, admin_user_id: int) -> list[dict]:
+def list_all_sites_with_owner(db: Session, *, admin_user_id: int) -> list[dict[str, object]]:
     """Igual que `list_all_sites`, pero con el correo del dueño (el
     `SiteMember` con `role="owner"`) resuelto para cada sitio — la consola
     de admin es una vista operativa de soporte sobre sitios de terceros,
@@ -94,12 +95,13 @@ def list_all_sites_with_owner(db: Session, *, admin_user_id: int) -> list[dict]:
     temporal) — para que la tabla lo muestre sin tener que abrir cada fila
     una por una a ver si ahí sigue vinculado."""
     sites = list_all_sites(db)
-    owner_emails: dict[int, str] = dict(
-        db.query(SiteMember.site_id, User.email)
+    owner_emails: dict[int, str] = {
+        site_id: email
+        for site_id, email in db.query(SiteMember.site_id, User.email)
         .join(User, User.id == SiteMember.user_id)
         .filter(SiteMember.role == "owner")
         .all()
-    )
+    }
     admin_site_ids: set[int] = {
         row[0]
         for row in db.query(SiteMember.site_id)

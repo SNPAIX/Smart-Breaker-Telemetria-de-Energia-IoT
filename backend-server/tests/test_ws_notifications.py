@@ -5,6 +5,8 @@ prueba `test_notifications.py`) y se verifica que el mensaje llega por el
 socket abierto — sin mockear `get_push_sender`, a diferencia de
 `test_notifications.py`, para validar la implementación real
 (`WebSocketPushSender` + `ConnectionManager`)."""
+from fastapi.testclient import TestClient
+
 from app.core.security import create_access_token, get_password_hash
 from app.db import SessionLocal
 from app.main import app
@@ -18,7 +20,6 @@ from app.models.entities import (
     User,
 )
 from app.services.device_auth import issue_device_credential
-from fastapi.testclient import TestClient
 from simulator.device_simulator import DeviceSimulator
 from simulator.scenarios import scenario_overload
 

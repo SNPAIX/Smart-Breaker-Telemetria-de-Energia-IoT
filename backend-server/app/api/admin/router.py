@@ -111,7 +111,7 @@ def admin_update_user(user_id: int, payload: UserUpdateIn, db: Session = Depends
 
 
 @router.get("/users/{user_id}/deletion-impact", response_model=UserDeletionImpactOut)
-def admin_preview_user_deletion(user_id: int, db: Session = Depends(get_db)) -> dict:
+def admin_preview_user_deletion(user_id: int, db: Session = Depends(get_db)) -> dict[str, object]:
     get_user_or_404(db, user_id)
     return {"orphaned_sites": preview_user_deletion_impact(db, user_id)}
 
@@ -134,7 +134,7 @@ def admin_create_site(payload: SiteCreateIn, db: Session = Depends(get_db)) -> S
 @router.get("/sites", response_model=list[AdminSiteOut])
 def admin_list_sites(
     db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)
-) -> list[dict]:
+) -> list[dict[str, object]]:
     return list_all_sites_with_owner(db, admin_user_id=current_admin.id)
 
 

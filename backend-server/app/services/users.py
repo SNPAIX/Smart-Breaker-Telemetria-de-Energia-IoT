@@ -55,12 +55,13 @@ def list_sites_solely_owned_by(db: Session, user_id: int) -> list[Site]:
 
     Se usa para avisar ANTES de borrar un usuario (`delete_user`), nunca
     para bloquear el borrado — el admin decide informado, no se le impide."""
-    owner_counts = dict(
-        db.query(SiteMember.site_id, func.count(SiteMember.id))
+    owner_counts: dict[int, int] = {
+        site_id: count
+        for site_id, count in db.query(SiteMember.site_id, func.count(SiteMember.id))
         .filter(SiteMember.role == "owner")
         .group_by(SiteMember.site_id)
         .all()
-    )
+    }
     my_owned_site_ids = {
         row[0]
         for row in db.query(SiteMember.site_id)
@@ -75,7 +76,7 @@ def list_sites_solely_owned_by(db: Session, user_id: int) -> list[Site]:
     return db.query(Site).filter(Site.id.in_(solely_owned_ids)).all()
 
 
-def preview_user_deletion_impact(db: Session, user_id: int) -> list[dict]:
+def preview_user_deletion_impact(db: Session, user_id: int) -> list[dict[str, object]]:
     """Igual que `list_sites_solely_owned_by`, pero con el conteo de
     dispositivos de cada sitio — lo que la UI necesita mostrar en el aviso
     de confirmación antes de borrar (cuántos dispositivos quedarían
@@ -83,12 +84,13 @@ def preview_user_deletion_impact(db: Session, user_id: int) -> list[dict]:
     sites = list_sites_solely_owned_by(db, user_id)
     if not sites:
         return []
-    device_counts = dict(
-        db.query(Device.site_id, func.count(Device.id))
+    device_counts: dict[int | None, int] = {
+        site_id: count
+        for site_id, count in db.query(Device.site_id, func.count(Device.id))
         .filter(Device.site_id.in_([site.id for site in sites]))
         .group_by(Device.site_id)
         .all()
-    )
+    }
     return [
         {"id": site.id, "name": site.name, "device_count": device_counts.get(site.id, 0)}
         for site in sites
