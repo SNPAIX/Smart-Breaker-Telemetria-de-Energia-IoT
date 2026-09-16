@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: voltguard_db
+    environment:
+      POSTGRES_USER: voltguard_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev-only-insecure-password-set-POSTGRES_PASSWORD-env-var}
+      POSTGRES_DB: voltguard_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voltguard_user -d voltguard_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      # El contexto es la raíz del repo (no `backend-server/`) para que la
+      # imagen pueda ver también `IA-Assistant/`, que vive fuera de este
+      # paquete a propósito (etapa 14).
+      context: ..
+      dockerfile: backend-server/Dockerfile
+      args:
+        # Apagado por defecto: sin este flag, la imagen no instala ni
+        # compila nada de IA-Assistant/ y el backend arranca igual. Se
+        # activa con `ENABLE_VOICE_ASSISTANT=true docker compose build`.
+        ENABLE_VOICE_ASSISTANT: ${ENABLE_VOICE_ASSISTANT:-false}
+    container_name: voltguard_api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://voltguard_user:${POSTGRES_PASSWORD:-dev-only-insecure-password-set-POSTGRES_PASSWORD-env-var}@db:5432/voltguard_db
+      - SECRET_KEY=${SECRET_KEY:-dev-only-insecure-key-set-SECRET_KEY-env-var}
+      - VOICE_ASSISTANT_ENABLED=${VOICE_ASSISTANT_ENABLED:-false}
+      - VOICE_ASSISTANT_MODEL_PATH=${VOICE_ASSISTANT_MODEL_PATH:-}
+    volumes:
+      # Bind-mount de desarrollo: refleja cambios de código sin reconstruir
+      # la imagen y hace que lo generado dentro del contenedor (ej. una
+      # migración nueva de Alembic) quede también en el host. La imagen de
+      # producción (etapa 15) sigue construyéndose con el Dockerfile tal
+      # cual, vía `COPY backend-server/. .` — este volumen no lo afecta.
+      #
+      # `ia_assistant` compilado NO se monta acá a propósito: es un
+      # artefacto nativo generado en el build de la imagen, montar el
+      # código fuente encima lo taparía sin sentido.
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

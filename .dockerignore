@@ -1,0 +1,34 @@
+# El contexto de build es la raíz del repo (etapa 14) porque la imagen del
+# backend necesita ver `IA-Assistant/` además de `backend-server/`, y
+# desde la etapa 15 el proxy necesita ver `front/` para compilarlo — ver
+# docker-compose.yml (raíz), backend-server/Dockerfile e infra/proxy.Dockerfile.
+.git
+.gitignore
+roadmap/
+mobile/
+ino/
+docs/
+hardware_tests/
+*.md
+
+# De front/ solo hace falta el código fuente — node_modules se reinstala
+# limpio en el build (npm ci) y dist/ lo genera el build mismo.
+front/node_modules/
+front/dist/
+
+.venv
+__pycache__
+.pytest_cache
+.coverage
+*.pyc
+*.pyo
+*.pyd
+*.so
+.env
+.env.local
+
+# Pesos de modelo del asistente de voz — nunca deben viajar por el
+# contexto de build ni versionarse; se montan/copian aparte si se necesitan.
+IA-Assistant/models/
+IA-Assistant/build/
+IA-Assistant/*.egg-info/

@@ -1,186 +1,107 @@
-# ⚡ VoltGuard — Smart Breaker & Telemetría de Energía IoT
+# VoltGuard
 
-![CI Pipeline](https://github.com/SNPAIX/Smart-Breaker-Telemetria-de-Energia-IoT/actions/workflows/ci.yml/badge.svg)
-![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
-![Python](https://img.shields.io/badge/python-3.12-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.110.0-009688)
+Plataforma IoT de monitoreo, control y protección eléctrica ("breaker inteligente"): un
+dispositivo físico (ESP32-C3 + sensor PZEM-004T + relé) mide el consumo de una carga eléctrica en
+tiempo real y puede cortarla automáticamente ante una condición de riesgo, de forma autónoma y sin
+depender de la red. Un backend central administra usuarios, sitios y dispositivos, expuesto a un
+dashboard web y a una aplicación móvil Android.
 
-> **Plataforma IoT de Monitoreo de Energía, Detección de Anomalías e Interrupción Inteligente de Corriente.**
+📹 [**Ver presentación en video**](https://drive.google.com/file/d/1WunD4EeCPCmN1vJL3Xs_Dx3oSuU0y-sW/view?usp=sharing)
 
----
+## Estructura del monorepo
 
-## Visión General del Producto
+```
+.
+├── backend-server/   API FastAPI + PostgreSQL + Alembic (Python 3.12)
+├── front/            Dashboard web — usuarios y administración (React + Vite + TypeScript)
+├── mobile/           App Android de usuario final (React + Capacitor + TypeScript)
+├── ino/              Firmware ESP32-C3 (no modificar pines/lógica eléctrica ya validada)
+├── IA-Assistant/     Asistente de voz, módulo opcional y desacoplable
+├── infra/            Proxy inverso y TLS para el despliegue completo (Caddy)
+└── docs/             Documentación de referencia
+```
 
-**VoltGuard** es un sistema de telemetría e interrupción inteligente de energía (Smart Breaker) diseñado para entornos domésticos, laboratorios e industrias pequeñas. El sistema ingiere lecturas eléctricas en tiempo real desde microcontroladores (ESP32/Arduino), evalúa sobrecargas mediante un motor de reglas en el backend e interrumpe automáticamente la corriente ante condiciones críticas para proteger los equipos.
+Cada carpeta es independiente, con sus propias dependencias. El único contrato compartido entre
+clientes (`front/`, `mobile/`, `ino/`) es la API HTTP/WebSocket que expone `backend-server/`.
 
-Para atender las necesidades de operación y gestión, el sistema cuenta con dos contextos principales:
-* **API Operativa (Usuario Final / IoT Edge):** Ingesta continua de telemetría (`POST /telemetry/readings`), control manual/automático del relé, alertas individuales y cálculo de costo proyectado.
-* **API de Administración (Dashboard & Grupos):** Dashboard de agregaciones globales (`GET /admin/dashboard/metrics`), CRUD de usuarios con control de acceso por roles (RBAC) y gestión de dispositivos agrupados (ej. por edificio o laboratorio).
-
-### Inteligencia integrada
-
-VoltGuard incorpora tres piezas de inteligencia sobre la telemetría ingerida:
-
-1. **Motor de reglas de corte** — evalúa cada lectura contra umbrales configurados y dispara el evento `CRITICAL_OVERLOAD`, ordenando el apagado remoto en <500ms desde la detección.
-2. **Detector de anomalías** — identifica comportamiento de consumo atípico por aparato/dispositivo, comparándolo contra su propio histórico.
-3. **Proyección de costo** — estima la tendencia de consumo y el costo mensual acumulado con un margen de error objetivo <10%.
-
----
-
-## Enlaces del Proyecto (Producción & Demostración)
-
-* **URL de Producción (API REST):** `PENDIENTE_DESPLIEGUE` *(Próximamente)*
-* **Documentación Interactiva (Swagger UI):** `PENDIENTE_DESPLIEGUE/docs`
-* **Health Check Endpoint:** `PENDIENTE_DESPLIEGUE/health`
-* **Video Demo (Presentación):** `PENDIENTE_VIDEO_DEMO`
-
----
-
-## Arquitectura del Sistema
+## Arquitectura
 
 ```mermaid
-graph TD
-    classDef hw fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
-    classDef api fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
-    classDef db fill:#fff3e0,stroke:#e65100,stroke-width:2px;
-    classDef ia fill:#f3e5f5,stroke:#4a148c,stroke-width:2px;
-
-    subgraph Edge ["1. Hardware / Cliente IoT"]
-        AC["Red de Corriente Alterna (CA)"] --> Opto["Optocoplador (Detección CA)"]
-        AC --> SensorC["PZEM-004T V3.0 (Medidor UART/Modbus)"]
-        Opto --> MCU["ESP32-C3"]
-        SensorC --> MCU
-        MCU --> Rele["Relevador SLA-05VDC-SL-A (Corte Físico)"]
+flowchart LR
+    subgraph device["Dispositivo (ino/)"]
+        sensor["Sensor PZEM-004T\nvoltaje, corriente, potencia, energía"]
+        mcu["ESP32-C3\ncorte por sobrecarga LOCAL\n(no depende de red ni servidor)"]
+        relay["Relé"]
+        sensor --> mcu --> relay
     end
 
-    subgraph Backend ["2. Backend FastAPI (Producción)"]
-        Ingress["API Gateway / Routers FastAPI"]
-        RulesEngine["Motor de Reglas de Corte"]
-        AnomalyEngine["Detector de Anomalías"]
-        ServiceOp["Servicio Operativo (Readings/Devices)"]
-        ServiceAdmin["Servicio Admin (Dashboard/RBAC)"]
-        Logging["Logging Estructurado (JSON)"]
-
-        MCU -- "POST /telemetry/readings" --> Ingress
-        Ingress --> ServiceOp
-        Ingress --> ServiceAdmin
-        ServiceOp --> RulesEngine
-        ServiceOp --> AnomalyEngine
-        RulesEngine -- "Corte Inmediato / Order HTTP" --> MCU
-        Ingress --> Logging
+    subgraph backend["Servidor (backend-server/)"]
+        api["API FastAPI"]
+        db[("PostgreSQL")]
+        rules["Reglas de seguridad,\nproyección y anomalías"]
+        api --> db
+        api --> rules
     end
 
-    subgraph DataAI ["3. Capa de Datos e Inteligencia"]
-        DB[(PostgreSQL + Alembic)]
-        CostModel["Proyección de Costo Mensual"]
-
-        ServiceOp --> DB
-        ServiceAdmin --> DB
-        AnomalyEngine --> DB
-        CostModel -- "Lee histórico" --> DB
-        CostModel -- "Proyección mensual" --> ServiceAdmin
+    subgraph clients["Clientes de usuario"]
+        web["Panel web (front/)"]
+        mobile["App móvil (mobile/)"]
     end
 
-    subgraph Client ["4. Interfaces & Documentación"]
-        Swagger["Docs Swagger (/docs)"]
-        AppUI["Dashboard Web / Cliente"]
-
-        AppUI -- "GET /admin/dashboard" --> Ingress
-        Ingress --> Swagger
+    subgraph assistant["Módulo Asistente IA"]
+        voice["Asistente de voz\n(IA-Assistant/, opcional)"]
     end
 
-    class AC,Opto,SensorC,MCU,Rele hw;
-    class Ingress,RulesEngine,AnomalyEngine,ServiceOp,ServiceAdmin,Logging api;
-    class DB db;
-    class CostModel ia;
-```
-##  Arquitectura del hardware a implementar
-* **Microcontrolador y Sensor Principal:** El sistema utiliza un ESP32-C3 como núcleo de procesamiento y conectividad Wi-Fi, integrándose mediante comunicación UART optoaislada con el módulo PZEM-004T V3.0 (100 A) para la medición de voltaje, corriente RMS, potencia activa, frecuencia, factor de potencia y energía acumulada.  
-* **Aislamiento y Regulación de Energía:** La electrónica se alimenta directamente de la red mediante una fuente AC/DC aislada Mean Well IRM-05-5 (~127 VCA a 5 VDC), complementada con un regulador AMS1117-3.3 y capacitores de desacoplamiento (10 µF y 100 nF) para estabilizar los cambios rápidos de corriente durante la transmisión Wi-Fi.  
-* **Adaptación de Niveles Lógicos:** Dado que el ESP32 trabaja a 3.3 V y el PZEM a 5 V, se implementó un buffer lógico 74HCT125 para la transmisión (TX a RX) y un divisor resistivo (10 kΩ / 20 kΩ) para la recepción segura (RX del ESP32)
-* **Seguridad y Potencia:** El corte de carga se realiza mediante un relé SLA-05VDC-SL-A configurado en modo Normalmente Abierto (NO) como medida de seguridad por fallo de energía, controlado a través de un driver ULN2003A.  
-El sistema cuenta con doble protección por fusibles (retardados T15A para la carga de potencia y T1A para la fuente electrónica), un varistor MOV para picos de voltaje, y una línea de tierra física (PE) completamente aislada de la lógica del software.  
-* **Diseño de PCB:** La placa de circuito impreso está dividida estrictamente en dos regiones físicas aisladas: una zona de alta tensión (CA, fusibles, MOV, relé y entradas de red) y una zona de baja tensión (ESP32, reguladores, drivers y señales UART). 
+    mcu -- "REST: telemetría\ny estado" --> api
+    api -- "WebSocket: comandos\nencender/apagar" --> mcu
 
----
+    web -- "REST + WebSocket" --> api
+    mobile -- "REST + WebSocket" --> api
 
-## Stack Tecnológico
-* **Backend Framework:** FastAPI (Python 3.12)
-* **Base de Datos & ORM:** PostgreSQL + SQLAlchemy 2.x + Alembic (Migraciones)
-* **Inferencia & ML:** Scikit-learn (Proyección de consumo y costos, detección de anomalías)
-* **Calidad de Código:** Pytest (100% coverage), Ruff (Linter), Mypy (Tipado estricto)
-* **Orquestación & CI/CD:** Docker, Docker Compose, GitHub Actions
-* **Seguridad:** JWT + RBAC, `SECRET_KEY` gestionado por variable de entorno (nunca en el código)
-
----
-
-## Puesta en marcha local
-
-### Requisitos previos
-* Docker y Docker Compose
-* Python 3.12 (si se quiere correr fuera de contenedores)
-
-### Con Docker Compose (recomendado)
-```bash
-git clone https://github.com/SNPAIX/Smart-Breaker-Telemetria-de-Energia-IoT.git
-cd Smart-Breaker-Telemetria-de-Energia-IoT/voltguard-backend
-cp .env.example .env   # completar variables (ver sección siguiente)
-docker compose up --build
-```
-La API queda disponible en `http://localhost:8000` y la documentación interactiva en `http://localhost:8000/docs`.
-
-### Entorno local (sin Docker)
-```bash
-cd voltguard-backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-export $(grep -v '^#' .env | xargs)
-alembic upgrade head
-uvicorn app.main:app --reload
+    voice -- "misma API,\nmismos permisos" --> api
 ```
 
-### Correr pruebas y linters
-```bash
-python3 -m ruff check .
-python3 -m mypy app/
-python3 -m pytest -q --cov=app --cov-report=term-missing
+El dispositivo nunca le habla directamente a un cliente, ni un cliente al dispositivo: todo pasa
+por el servidor, que es el único punto que conoce el estado completo del sistema. El corte crítico
+por sobrecarga ocurre localmente en el propio microcontrolador, como respaldo autónomo aunque el
+servidor no esté disponible; el servidor agrega una segunda capa de reglas de seguridad, además de
+la proyección de gasto y la detección de anomalías. El asistente de voz es un módulo aparte que
+reutiliza la misma API y los mismos permisos que ya usan el panel web y la app móvil.
+
+## Desarrollo local
+
+Backend (con recarga de bind-mount, sin proxy ni TLS):
+
+```
+cd backend-server
+docker compose up -d
+docker compose exec api alembic upgrade head
 ```
 
----
+Dashboard web y app móvil (cada uno en su propio puerto de Vite, apuntando a `localhost:8000`):
 
-## Variables de entorno
+```
+cd front && npm install && npm run dev
+cd mobile && npm install && npm run dev
+```
 
-| Variable | Descripción |
-|---|---|
-| `DATABASE_URL` | Cadena de conexión a PostgreSQL |
-| `SECRET_KEY` | Clave de firma JWT (obligatoria, sin valor por defecto inseguro en producción) |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Vigencia del token de acceso |
-| `ENVIRONMENT` | `development` / `production`, controla nivel de logging y validaciones |
+## Despliegue completo
 
----
+El `docker-compose.yml` de la raíz levanta la base de datos, el backend y un proxy Caddy con TLS
+local, sirviendo el build de `front/` bajo el mismo origen que la API. Sin dependencia de ningún
+registro de imágenes: cada máquina construye las suyas con `docker compose build`.
 
-## Endpoints principales
+```
+cp .env.example .env   # completar variables
+docker compose up -d --build
+```
 
-### API Operativa
-| Método | Ruta | Descripción |
-|---|---|---|
-| `POST` | `/telemetry/readings` | Ingesta de una lectura de telemetría |
-| `GET` | `/devices` | Lista los dispositivos del usuario |
-| `POST` | `/devices/{id}/switch` | Corte manual/automático del relé |
-| `GET` | `/devices/{id}/cost-projection` | Proyección de costo mensual del dispositivo |
+Más detalle en [`docs/despliegue.md`](docs/despliegue.md).
 
-### API de Administración
-| Método | Ruta | Descripción |
-|---|---|---|
-| `GET` | `/admin/dashboard/metrics` | Métricas agregadas globales |
-| `CRUD` | `/admin/users` | Gestión de usuarios (RBAC) |
-| `CRUD` | `/admin/device-groups` | Gestión de grupos de dispositivos |
+## Documentación
 
-### General
-| Método | Ruta | Descripción |
-|---|---|---|
-| `GET` | `/health` | Health check |
-
----
-
+- [`docs/Reporte.pdf`](docs/Reporte.pdf) — reporte del proyecto.
+- [`docs/despliegue.md`](docs/despliegue.md) — despliegue de la plataforma completa.
+- [`docs/IA_LOG.md`](docs/IA_LOG.md) — bitácora de uso de IA durante el desarrollo.
+- [`docs/BASE-REPO-README.md`](docs/BASE-REPO-README.md) — README del repositorio base del que
+  partió el firmware, conservado como referencia histórica.

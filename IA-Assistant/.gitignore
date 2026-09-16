@@ -1,0 +1,17 @@
+models/*.gguf
+models/*.bin
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# Artefactos de compilación nativa (mypyc) — se generan en el build de la
+# imagen Docker (target Linux) o localmente solo para validar antes de
+# integrar; nunca se versionan binarios de plataforma.
+build/
+*.pyd
+*.so
+build_native.bat
+build_log.txt
+direct_log.txt

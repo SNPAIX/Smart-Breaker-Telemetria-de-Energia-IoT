@@ -1,0 +1,38 @@
+# Reverse proxy + TLS para la plataforma completa (etapa 15).
+#
+# Todo local, sin dominio real ni Let's Encrypt — `tls internal` le pide a
+# Caddy que actúe como su propia autoridad certificadora y emita un
+# certificado autofirmado para lo que sea que escuches (localhost, una IP
+# de LAN, o el nombre que le pongas acá). El navegador va a marcarlo como
+# "no confiable" la primera vez porque no es una CA pública — normal y
+# esperado para una instalación local, no es un bug.
+#
+# Si en algún momento hay un dominio real con DNS público apuntando acá,
+# alcanza con reemplazar "localhost" por ese dominio y borrar la línea
+# "tls internal" — Caddy pide un certificado real de Let's Encrypt solo.
+
+localhost {
+	tls internal
+
+	# Todo lo que empiece con /api/ va al backend tal cual — FastAPI ya
+	# registra sus rutas con el prefijo /api/v1/..., así que no hace
+	# falta reescribir el path.
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# El resto sirve el build estático de front/ — try_files cae a
+	# index.html para que las rutas de React Router (ej. /sites/5) no
+	# den 404 al recargar la página.
+	handle {
+		root * /srv/front
+		try_files {path} /index.html
+		file_server
+	}
+
+	encode gzip
+}
+
+:80 {
+	redir https://{host}{uri} permanent
+}

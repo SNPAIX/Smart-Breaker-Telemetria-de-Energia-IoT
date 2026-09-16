@@ -1,0 +1,10 @@
+# Matching determinista (siempre necesario si la feature está activa).
+rapidfuzz>=3.9,<4.0
+mypy-extensions>=1.0,<2.0
+
+# Fallback opcional con LLM local (LFM2.5-350M u otro GGUF compatible).
+# Pesado (compila bindings nativos) — solo instalar si se va a usar el
+# fallback; sin esta dependencia, ia_assistant.llm_fallback simplemente
+# reporta el motor como no disponible y el matcher determinista sigue
+# funcionando solo.
+llama-cpp-python>=0.2.90,<0.3

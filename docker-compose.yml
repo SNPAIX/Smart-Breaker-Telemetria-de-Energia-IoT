@@ -1,0 +1,80 @@
+# Plataforma completa (etapa 15) — API + Postgres + frontend + reverse
+# proxy con TLS, todo local. No hay ningún paso de `docker push` ni
+# dependencia de un registry o proveedor cloud: cada máquina construye sus
+# propias imágenes con `docker compose build`. Para migrar a otra máquina
+# no se publica nada — se copia el repo (zip o `git clone`) y se buildea
+# ahí mismo. Ver `docs/despliegue.md`.
+#
+# Para desarrollo del backend solo (sin proxy/TLS/frontend), seguir
+# usando `backend-server/docker-compose.yml` — este archivo es el de
+# "plataforma completa", pensado para quedar corriendo de forma más
+# permanente en una máquina/VPS.
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: voltguard_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-voltguard_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: ${POSTGRES_DB:-voltguard_db}
+    # Sin `ports:` a propósito — en este compose de plataforma completa,
+    # nada fuera de la red interna de Docker necesita hablarle a Postgres
+    # directamente. El compose de desarrollo (`backend-server/`) sí lo
+    # expone, para poder conectarse con un cliente SQL desde el host.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-voltguard_user} -d ${POSTGRES_DB:-voltguard_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: backend-server/Dockerfile
+      args:
+        ENABLE_VOICE_ASSISTANT: ${ENABLE_VOICE_ASSISTANT:-false}
+    container_name: voltguard_api
+    # A diferencia del compose de desarrollo (donde las migraciones se
+    # corren a mano, `docker compose exec api alembic upgrade head`), acá
+    # se corren solas al arrancar — este compose está pensado para quedar
+    # levantado en una máquina sin que alguien tenga que entrar a mano
+    # cada vez que hay un `docker compose up` nuevo (ej. tras la migración
+    # a otra máquina vía zip).
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-voltguard_user}:${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}@db:5432/${POSTGRES_DB:-voltguard_db}
+      - SECRET_KEY=${SECRET_KEY:?falta SECRET_KEY en .env}
+      - ENVIRONMENT=production
+      - VOICE_ASSISTANT_ENABLED=${VOICE_ASSISTANT_ENABLED:-false}
+      - VOICE_ASSISTANT_MODEL_PATH=${VOICE_ASSISTANT_MODEL_PATH:-}
+    # Sin bind-mount de código ni `ports:` publicados — acá corre la
+    # imagen tal cual quedó construida, y solo el proxy le habla por la
+    # red interna de Docker (`api:8000`), nunca directo desde afuera.
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  proxy:
+    build:
+      context: .
+      dockerfile: infra/proxy.Dockerfile
+    container_name: voltguard_proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
