@@ -22,6 +22,48 @@ dashboard web y a una aplicación móvil Android.
 Cada carpeta es independiente, con sus propias dependencias. El único contrato compartido entre
 clientes (`front/`, `mobile/`, `ino/`) es la API HTTP/WebSocket que expone `backend-server/`.
 
+## Arquitectura
+
+```mermaid
+flowchart LR
+    subgraph device["Dispositivo (ino/)"]
+        sensor["Sensor PZEM-004T\nvoltaje, corriente, potencia, energía"]
+        mcu["ESP32-C3\ncorte por sobrecarga LOCAL\n(no depende de red ni servidor)"]
+        relay["Relé"]
+        sensor --> mcu --> relay
+    end
+
+    subgraph backend["Servidor (backend-server/)"]
+        api["API FastAPI"]
+        db[("PostgreSQL")]
+        rules["Reglas de seguridad,\nproyección y anomalías"]
+        api --> db
+        api --> rules
+    end
+
+    subgraph clients["Clientes de usuario"]
+        web["Panel web (front/)"]
+        mobile["App móvil (mobile/)"]
+    end
+
+    voice["Asistente de voz\n(IA-Assistant/, opcional)"]
+
+    mcu -- "REST: telemetría\ny estado" --> api
+    api -- "WebSocket: comandos\nencender/apagar" --> mcu
+
+    web -- "REST + WebSocket" --> api
+    mobile -- "REST + WebSocket" --> api
+
+    voice -- "misma API,\nmismos permisos" --> api
+```
+
+El dispositivo nunca le habla directamente a un cliente, ni un cliente al dispositivo: todo pasa
+por el servidor, que es el único punto que conoce el estado completo del sistema. El corte crítico
+por sobrecarga ocurre localmente en el propio microcontrolador, como respaldo autónomo aunque el
+servidor no esté disponible; el servidor agrega una segunda capa de reglas de seguridad, además de
+la proyección de gasto y la detección de anomalías. El asistente de voz es un módulo aparte que
+reutiliza la misma API y los mismos permisos que ya usan el panel web y la app móvil.
+
 ## Desarrollo local
 
 Backend (con recarga de bind-mount, sin proxy ni TLS):
