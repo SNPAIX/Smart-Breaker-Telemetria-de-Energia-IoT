@@ -270,8 +270,15 @@ ios/
 # Documentos generados (reportes, propuestas) — quedan solo en local
 # ============================================================
 *.pdf
+!/docs/Reporte.pdf
 
 # ============================================================
 # Scratch temporal de sesiones de asistencia (uso local, no se versiona)
 # ============================================================
 /tmp/
+
+# ============================================================
+# Video de presentación — pesa demasiado para el repo, se aloja
+# aparte (ver enlace en README.md) y queda solo en local
+# ============================================================
+/docs/*.mp4

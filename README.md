@@ -6,6 +6,8 @@ tiempo real y puede cortarla automáticamente ante una condición de riesgo, de 
 depender de la red. Un backend central administra usuarios, sitios y dispositivos, expuesto a un
 dashboard web y a una aplicación móvil Android.
 
+📹 [**Ver presentación en video**](https://drive.google.com/file/d/1WunD4EeCPCmN1vJL3Xs_Dx3oSuU0y-sW/view?usp=sharing)
+
 ## Estructura del monorepo
 
 ```
@@ -98,6 +100,8 @@ Más detalle en [`docs/despliegue.md`](docs/despliegue.md).
 
 ## Documentación
 
+- [`docs/Reporte.pdf`](docs/Reporte.pdf) — reporte del proyecto.
 - [`docs/despliegue.md`](docs/despliegue.md) — despliegue de la plataforma completa.
+- [`docs/IA_LOG.md`](docs/IA_LOG.md) — bitácora de uso de IA durante el desarrollo.
 - [`docs/BASE-REPO-README.md`](docs/BASE-REPO-README.md) — README del repositorio base del que
   partió el firmware, conservado como referencia histórica.

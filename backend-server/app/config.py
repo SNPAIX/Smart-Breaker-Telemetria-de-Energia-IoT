@@ -9,7 +9,13 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    database_url: str = "postgresql://voltguard_user:supersecretpassword@localhost:5432/voltguard_db"
+    # Sin contraseña real hardcodeada a propósito — mismo criterio que
+    # `secret_key` abajo: si no se define DATABASE_URL, cae en un fallback
+    # de desarrollo marcado explícitamente como inseguro.
+    database_url: str = (
+        "postgresql://voltguard_user:dev-only-insecure-password-set-POSTGRES_PASSWORD-env-var"
+        "@localhost:5432/voltguard_db"
+    )
 
     # Sin default seguro a propósito: si no se define, cae en la clave de
     # desarrollo insegura marcada explícitamente como tal (ver security.py).

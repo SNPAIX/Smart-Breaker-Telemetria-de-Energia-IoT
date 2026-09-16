@@ -4,7 +4,7 @@ services:
     container_name: voltguard_db
     environment:
       POSTGRES_USER: voltguard_user
-      POSTGRES_PASSWORD: supersecretpassword
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev-only-insecure-password-set-POSTGRES_PASSWORD-env-var}
       POSTGRES_DB: voltguard_db
     ports:
       - "5432:5432"
@@ -32,7 +32,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://voltguard_user:supersecretpassword@db:5432/voltguard_db
+      - DATABASE_URL=postgresql://voltguard_user:${POSTGRES_PASSWORD:-dev-only-insecure-password-set-POSTGRES_PASSWORD-env-var}@db:5432/voltguard_db
       - SECRET_KEY=${SECRET_KEY:-dev-only-insecure-key-set-SECRET_KEY-env-var}
       - VOICE_ASSISTANT_ENABLED=${VOICE_ASSISTANT_ENABLED:-false}
       - VOICE_ASSISTANT_MODEL_PATH=${VOICE_ASSISTANT_MODEL_PATH:-}
